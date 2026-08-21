@@ -1,6 +1,6 @@
 # Category Profiles
 
-Apply exactly one profile selected at task start. The common technical and relationship rules in `selection-rubric.md` always remain active. For `mixed`, assign each item its dominant story function and apply only that profile to that item.
+Apply exactly one profile selected at task start. The common technical and relationship rules in `selection-rubric.md` always remain active. For `mixed`, assign each item its dominant story function and apply only that profile to that item. The reference emphasis below guides weighting; the required live-source set comes from `reference-source-map.json` and cannot be shortened silently.
 
 ## `mixed` — 综合或混合素材
 

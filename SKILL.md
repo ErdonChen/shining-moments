@@ -15,7 +15,13 @@ This is a conservative first filter, not a final edit. Remove only confidently u
 
 ## Start every task
 
-Confirm the read-only source and a new, separate output directory, then ask one compact opening prompt in this order:
+Run **Connectivity check and live references** before inspecting media or asking for source/output paths:
+
+1. Check whether the current environment can reach at least two public reference-site endpoints from [references/reference-source-map.json](references/reference-source-map.json). Use the environment's available connection as configured; do not require a particular connection method. Record time, endpoints, result, and limitation in `connectivity_check`.
+2. If the check fails, state exactly: **“当前无法查阅参考网站，因此不能获得实时参考/近期趋势。”** Then ask whether the user agrees to continue with existing static aesthetic knowledge or prior impressions. Without explicit agreement, pause before inventory or culling. Never silently downgrade or describe static knowledge as live observation.
+3. If connectivity succeeds, continue with live research. A successful opening check does not prove every source is accessible; record per-source restrictions honestly.
+
+After that gate is ready, confirm the read-only source and a new, separate output directory, then ask one compact opening prompt in this order:
 
 1. **Material type:** `mixed`, `landscape-travel`, `architecture-space`, `documentary-culture`, `portrait`, `family`, `friends`, `vlog-event`, or `custom`; default `mixed`. Read only its profile in [references/category-profiles.md](references/category-profiles.md). Mixed mode routes each item separately.
 2. **Organization mode:** `link` or `copy`; default `link`. Explain that links use the least space. Copy mode makes lightweight files for human re-screening: directly reviewable photos are safely copied, RAW uses or generates JPEG, and selected high-resolution video intervals become about-720p clips instead of copying whole high-bitrate videos. This substantially reduces the review directory but is not zero-storage; confirm this trade-off before writing.
@@ -23,21 +29,25 @@ Confirm the read-only source and a new, separate output directory, then ask one 
 
 Never move, overwrite, or delete originals, and never reuse a non-empty output directory.
 
-Read [references/selection-rubric.md](references/selection-rubric.md). Read [references/style-reference-sources.md](references/style-reference-sources.md) only when current examples are needed. Use `watch` for scene-aware video evidence. Use `video-use` only for later exact-frame or creative editing.
+Read [references/selection-rubric.md](references/selection-rubric.md). Before every cull, read and follow [references/style-reference-sources.md](references/style-reference-sources.md) and [references/reference-calibration-schema.md](references/reference-calibration-schema.md). Use `watch` for scene-aware video evidence. Use `video-use` only for later exact-frame or creative editing.
 
 ## Workflow
 
-1. Inventory read-only: paths, type, dimensions or duration, capture time, corruption, and duplicate groups.
-2. Inspect representative frames and useful long-video intervals.
-3. Apply aesthetic/story and relationship/memory channels. Relationship value may rescue imperfect media when the interaction remains discernible.
-4. Run the normal first-pass classification as `select`, `review`, `memory`, or `excluded`. Do not ask about a backup percentage in the opening prompt.
-5. Deduplicate the candidate denominator: RAW+JPEG pairs and byte-identical files count once. Calculate `review_unique_candidates / unique_candidates`. The default review ceiling is 20%, or an explicit user-supplied alternative. It is a conditional ceiling, never a quota: at or below it, change nothing and never add weak items to fill it.
-6. Only above the ceiling, run backup overflow reduction until the deduplicated review ratio is at or below the ceiling. Remove redundancy first. An ordinary unchanged burst normally keeps at most 1–2 genuinely distinct `review` alternatives; an irreplaceable relationship progression may keep 3–5 only for distinct setup, peak, resolution, or relationship beats. Move usable remainder to `not_selected`, not `excluded` or `memory`.
-7. Choose retained representatives with the active category profile and reference calibration. For posed portraits or groups, prefer visible unobstructed faces, open eyes, natural or engaging expressions, suitable camera-facing gaze, composition, light, focus, and timing. For candid, documentary, or family interaction, let emotion, relationship, interaction, and story beat outweigh direct gaze when stronger. Popularity metrics never replace judgment.
-8. Create a UTF-8 CSV manifest with `source_path,decision,reason,start_time,end_time`. Use one row per useful video interval. For deterministic overflow handling, add `candidate_id,similarity_group,relationship_progression,story_beat,representative_score,capture_style,selection_evidence`; blank values remain valid. Optionally add `paired_jpeg_path` for a known RAW+JPEG pair; otherwise same-stem `.jpg`/`.jpeg` is detected automatically.
-9. Run `scripts/build_review_set.py --manifest <csv> --output <dir> --mode link|copy --video-delivery auto|timecodes|clips [--review-ceiling 0.20]`. Prefer `auto`: copy mode exports lightweight clips, link mode keeps timecodes. The script prints a rough, non-zero storage estimate before generation and records both the first-pass and final review ratios.
-10. Inspect `generation_status`, `review_asset_kind`, and `generation_detail` in `筛选清单.csv`; inspect `未入选清单.csv` separately from `排除清单.csv`. Verify counts, mappings, playable clips, links, sources, and reasons. Exit status `3` means the review set exists but one or more derivatives failed; do not present it as fully successful.
-11. Report uncertainty instead of rejecting guesses. Map every review file back to its high-quality original and tell the user to use originals for final editing.
+1. After connectivity succeeds and material type is known, account for every canonical source in `reference-source-map.json`. Visit every source required for the active type; each other source needs a concrete `skip_reason`. Search recent popular, featured, editor-selected, or representative public work rather than relying on remembered site style.
+2. Record `reference-calibration.json`: access date, search terms, sample scope, visible curation or popularity mechanism, evidence URLs, access limitations, keywords, observed patterns, and whether evidence is editorial, recent trend, or one-author style. Restricted sites need a truthful limitation plus verifiable public fallback evidence; never pretend access succeeded.
+3. Synthesize repeated cross-source patterns and translate them into project selection rules. Keep long-term editorial standards, recent platform trends, and individual-author signatures separate. Likes, views, ratings, and ranking are discovery signals only.
+4. Run `python3 scripts/validate_reference_calibration.py --input <reference-calibration.json>`. Continue only on `ready-live` or `ready-static-authorized`. Exit `3` means pause for explicit user authorization; exit `2` means repair the evidence log before culling.
+5. Inventory read-only: paths, type, dimensions or duration, capture time, corruption, and duplicate groups.
+6. Inspect representative frames and useful long-video intervals.
+7. Apply the validated reference calibration plus aesthetic/story and relationship/memory channels. Relationship value may rescue imperfect media when the interaction remains discernible.
+8. Run the normal first-pass classification as `select`, `review`, `memory`, or `excluded`. Do not ask about a backup percentage in the opening prompt.
+9. Deduplicate the candidate denominator: RAW+JPEG pairs and byte-identical files count once. Calculate `review_unique_candidates / unique_candidates`. The default review ceiling is 20%, or an explicit user-supplied alternative. It is a conditional ceiling, never a quota: at or below it, change nothing and never add weak items to fill it.
+10. Only above the ceiling, run backup overflow reduction until the deduplicated review ratio is at or below the ceiling. Remove redundancy first. An ordinary unchanged burst normally keeps at most 1–2 genuinely distinct `review` alternatives; an irreplaceable relationship progression may keep 3–5 only for distinct setup, peak, resolution, or relationship beats. Move usable remainder to `not_selected`, not `excluded` or `memory`.
+11. Choose retained representatives with the active category profile and validated reference calibration. For posed portraits or groups, prefer visible unobstructed faces, open eyes, natural or engaging expressions, suitable camera-facing gaze, composition, light, focus, and timing. For candid, documentary, or family interaction, let emotion, relationship, interaction, and story beat outweigh direct gaze when stronger. Popularity metrics never replace judgment.
+12. Create a UTF-8 CSV manifest with `source_path,decision,reason,start_time,end_time`. Use one row per useful video interval. For deterministic overflow handling, add `candidate_id,similarity_group,relationship_progression,story_beat,representative_score,capture_style,selection_evidence`; blank values remain valid. Optionally add `paired_jpeg_path` for a known RAW+JPEG pair; otherwise same-stem `.jpg`/`.jpeg` is detected automatically.
+13. Run `scripts/build_review_set.py --manifest <csv> --output <dir> --mode link|copy --video-delivery auto|timecodes|clips [--review-ceiling 0.20]`. Prefer `auto`: copy mode exports lightweight clips, link mode keeps timecodes. The script prints a rough, non-zero storage estimate before generation and records both the first-pass and final review ratios.
+14. Inspect `generation_status`, `review_asset_kind`, and `generation_detail` in `筛选清单.csv`; inspect `未入选清单.csv` separately from `排除清单.csv`. Verify counts, mappings, playable clips, links, sources, and reasons. Exit status `3` means the review set exists but one or more derivatives failed; do not present it as fully successful.
+15. Report uncertainty instead of rejecting guesses. Map every review file back to its high-quality original and tell the user to use originals for final editing.
 
 ## Lightweight copy contract
 

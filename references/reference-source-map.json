@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "500px",
+      "name": "500px",
+      "url": "https://500px.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["landscape-travel", "architecture-space", "documentary-culture"]
+    },
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "url": "https://www.youtube.com/",
+      "roles": ["trend", "author-discovery"],
+      "required_for": ["landscape-travel", "architecture-space", "documentary-culture", "friends", "vlog-event"]
+    },
+    {
+      "id": "shotdeck",
+      "name": "ShotDeck",
+      "url": "https://shotdeck.com/",
+      "roles": ["editorial"],
+      "required_for": ["landscape-travel", "architecture-space", "documentary-culture", "vlog-event"]
+    },
+    {
+      "id": "national-geographic-photography",
+      "name": "National Geographic Photography",
+      "url": "https://www.nationalgeographic.com/photography/",
+      "roles": ["editorial"],
+      "required_for": ["landscape-travel", "architecture-space", "documentary-culture"]
+    },
+    {
+      "id": "archdaily",
+      "name": "ArchDaily",
+      "url": "https://www.archdaily.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["architecture-space"]
+    },
+    {
+      "id": "dezeen",
+      "name": "Dezeen",
+      "url": "https://www.dezeen.com/",
+      "roles": ["editorial", "trend"],
+      "required_for": ["architecture-space"]
+    },
+    {
+      "id": "documentary-family-awards",
+      "name": "Documentary Family Awards",
+      "url": "https://documentaryfamilyawards.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["family"]
+    },
+    {
+      "id": "family-photojournalist-association",
+      "name": "Family Photojournalist Association",
+      "url": "https://www.fpja.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["family"]
+    },
+    {
+      "id": "lensculture",
+      "name": "LensCulture",
+      "url": "https://www.lensculture.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["documentary-culture", "portrait", "family", "friends"]
+    },
+    {
+      "id": "magnum-photos",
+      "name": "Magnum Photos",
+      "url": "https://www.magnumphotos.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["documentary-culture", "portrait", "family", "friends"]
+    },
+    {
+      "id": "this-is-reportage",
+      "name": "This Is Reportage",
+      "url": "https://thisisreportage.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["family", "friends"]
+    },
+    {
+      "id": "instagram",
+      "name": "Instagram",
+      "url": "https://www.instagram.com/",
+      "roles": ["trend", "author-discovery"],
+      "required_for": ["portrait", "family", "friends", "vlog-event"]
+    },
+    {
+      "id": "vimeo-staff-picks",
+      "name": "Vimeo Staff Picks",
+      "url": "https://vimeo.com/channels/staffpicks",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["friends", "vlog-event"]
+    },
+    {
+      "id": "nowness",
+      "name": "NOWNESS",
+      "url": "https://www.nowness.com/",
+      "roles": ["editorial", "author-discovery"],
+      "required_for": ["vlog-event"]
+    },
+    {
+      "id": "xiaohongshu",
+      "name": "Xiaohongshu",
+      "url": "https://www.xiaohongshu.com/explore",
+      "roles": ["trend", "author-discovery"],
+      "required_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+    },
+    {
+      "id": "x",
+      "name": "X",
+      "url": "https://x.com/",
+      "roles": ["trend", "author-discovery"],
+      "required_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+    }
+  ]
+}
