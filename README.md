@@ -15,7 +15,8 @@
 Shining Moments 是一次保守的“第一次过滤”：它帮助缩小复筛范围，但把最终选择权留给用户。
 
 - **先选素材类型，再使用对应标准：** 开始时从综合、风景旅行、建筑空间、人文纪实、人像、家庭、朋友、Vlog/活动或自定义中选择；每类素材使用针对性的筛选标准，不把同一套评分模板反复套用到所有内容。
-- **自动公开来源打底，可选手动增强：** 素材类型确定后，先展示无需登录的照片/视频公开来源；用户可自选，未选择时使用分类默认。自动校准必须在本次运行中看到至少两个合适来源的实际图片或视频。YouTube、Bilibili、Vimeo、Instagram 和小红书只作为可选手动增强；[完整分层规则见“参考网站”](#参考网站)。
+- **先用无需登录的自动公开来源完成视觉校准：** 照片来源包括 Unsplash（精选构图与光线）、Pexels Photos（人物、生活方式与通用场景）、Flickr 公开内容（真实事件、街头与社区影像）和 Wikimedia Commons 图片（地点、历史与文化语境）；视频来源包括 Pexels Videos（动作、镜头结构与通用 B-roll）、Pixabay Videos（广泛主题的动态素材）、Mixkit（节奏鲜明的成片式镜头）以及适用时的 Wikimedia Commons 视频（纪实、历史与文化语境）。Skill 会按素材类型动态路由，自动校准必须在本次运行中看到至少两个合适来源的实际图片或视频。
+- **再按需使用手动增强：** 自动来源选定后，才会提供 YouTube、Bilibili、Vimeo、Instagram 和小红书。用户在自己的可见浏览器中自行完成登录或挑战；拒绝或无法使用时继续自动流程，不会阻塞。[完整分层规则见“参考网站”](#参考网站)。
 - **照片与视频统一分层，另设情感通道：** 输出主选、备选复筛和纪念留档；亲友关系与不可替代的情感瞬间可以独立于纯技术质量获得保留。
 - **副本会自动轻量化，不直接搬运大文件：** 链接模式最省空间；副本模式面向人工复筛，RAW 优先复用配对 JPEG，否则生成 JPEG 审看副本，4K/1080p 视频只把入选时间段导成约 720p 轻量片段，不复制整条高码率原视频。这会显著降低复筛目录占用，但不是“零占用”；脚本会先给出空间估算。
 - **保持可追溯与原件安全：** 照片、视频与轻量副本都会记录原路径、类别、理由和时间码映射。原文件永不移动、覆盖或删除；正式剪辑仍使用原件。
@@ -61,7 +62,7 @@ Shining Moments 并非 Codex 专用。核心 `SKILL.md`、分类与筛选规则�
 
 ### 第二步：选择参考来源
 
-Skill 会先按素材类型以及照片/视频范围展示适用的自动公开来源。用户可以选择其中一部分；没有选择时使用该类型的默认来源。自动来源无需登录，并且只有本次运行中实际可见的完整图片或可播放视频才算校准证据。
+Skill 会先按素材类型以及照片/视频范围展示适用的自动公开来源。照片池由 Unsplash、Pexels Photos、Flickr 公开内容和 Wikimedia Commons 图片组成；视频池由 Pexels Videos、Pixabay Videos、Mixkit 和适用时的 Wikimedia Commons 视频组成。用户可以选择其中一部分；没有选择时使用该类型的默认来源。自动来源无需登录，并且只有本次运行中实际可见的完整图片或可播放视频才算校准证据。各站点提供的参考侧重点见[“参考网站”](#参考网站)中的唯一来源表。
 
 自动来源选定后，Skill 会提供可选的手动增强来源。拒绝或无法使用手动增强不会阻塞任务，流程会继续使用自动公开来源。来源分层、登录边界和完整站点清单见[“参考网站”](#参考网站)。
 
@@ -125,12 +126,12 @@ python3 scripts/build_review_set.py \
 
 ## 参考网站
 
-这些网站用于校准构图、光线、动作、节奏和叙事方式，不复制具体作品，也不把点赞量或播放量当作质量分数。Skill 会按素材类型动态选择适用子集；下表是唯一的用户侧来源分层说明。
+这些网站用于校准构图、光线、动作、节奏和叙事方式，不复制具体作品，也不把点赞量或播放量当作质量分数。阅读和执行顺序是：先使用无需登录的自动公开来源建立视觉基础，再按需加入手动增强。Skill 会按素材类型动态选择适用子集；下表是唯一的用户侧来源分层说明。
 
 | 来源层级 | 照片网站 | 视频网站 | 使用规则 |
 |---|---|---|---|
-| 自动公开来源 | [Unsplash](https://unsplash.com/)、[Pexels Photos](https://www.pexels.com/)、[Flickr 公开内容](https://www.flickr.com/explore)、[Wikimedia Commons 图片](https://commons.wikimedia.org/wiki/Main_Page) | [Pexels Videos](https://www.pexels.com/videos/)、[Pixabay Videos](https://pixabay.com/videos/)、[Mixkit](https://mixkit.co/free-stock-video/)、适用时使用 [Wikimedia Commons 视频](https://commons.wikimedia.org/wiki/Category:Videos) | 无需登录。用户可选择来源；未选择时使用分类默认。只有本次运行中实际可见的完整图片或视频播放才算证据，且自动视觉校准至少需要两个合适来源。 |
-| 可选手动增强 | [Instagram](https://www.instagram.com/)、[小红书](https://www.xiaohongshu.com/explore) | [YouTube](https://www.youtube.com/)、[Bilibili](https://www.bilibili.com/)、[Vimeo](https://vimeo.com/)、Instagram、小红书 | 用户必须先在自己的可见浏览器中自行完成登录或挑战，再确认已准备好及所选来源；只使用浏览器中实际可见的内容。 |
+| **自动公开来源（无需登录，优先）** | [Unsplash](https://unsplash.com/)：精选构图、光线、旅行与生活方式画面。<br>[Pexels Photos](https://www.pexels.com/)：人物、生活方式与覆盖广泛的通用场景。<br>[Flickr 公开内容](https://www.flickr.com/explore)：真实事件、街头、社区与个人视角影像。<br>[Wikimedia Commons 图片](https://commons.wikimedia.org/wiki/Main_Page)：地点、建筑、历史与文化语境。 | [Pexels Videos](https://www.pexels.com/videos/)：人物动作、镜头结构与通用 B-roll。<br>[Pixabay Videos](https://pixabay.com/videos/)：自然、城市、科技等广泛主题的动态素材。<br>[Mixkit](https://mixkit.co/free-stock-video/)：节奏鲜明、接近成片或商业短片的镜头参考。<br>[Wikimedia Commons 视频](https://commons.wikimedia.org/wiki/Category:Videos)：适用时补充纪实、历史与文化语境。 | 用户可选择来源；未选择时使用分类默认。只有本次运行中实际可见的完整图片或视频播放才算证据，且自动视觉校准至少需要两个合适来源。 |
+| **可选手动增强（自动选择之后）** | [Instagram](https://www.instagram.com/)：当代人像、生活方式与短内容视觉语言。<br>[小红书](https://www.xiaohongshu.com/explore)：中文生活方式、旅行、产品与本地场景参考。 | [YouTube](https://www.youtube.com/)：长短视频叙事、镜头组织与剪辑结构。<br>[Bilibili](https://www.bilibili.com/)：中文 Vlog、活动、文化与社区内容。<br>[Vimeo](https://vimeo.com/)：作者型影像、摄影与后期完成度参考。<br>Instagram：短视频节奏与当代视觉表达。<br>小红书：中文生活方式、旅行与本地短视频表达。 | 用户必须先在自己的可见浏览器中自行完成登录或挑战，再确认已准备好及所选来源；只使用浏览器中实际可见的内容。 |
 
 手动增强过程中，Skill **永不索取、接收、保存或处理**用户名、密码、MFA 验证码、Cookie、账户凭据或其他认证秘密，也不会绕过任何保护。用户拒绝或无法使用手动增强时，流程会退回并继续使用自动公开来源，不会因此阻塞。
 
