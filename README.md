@@ -10,11 +10,33 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
 </p>
 
+## 核心亮点
+
+Shining Moments 是一次保守的“第一次过滤”：它帮助缩小复筛范围，但把最终选择权留给用户。
+
+- **先选素材类型，再使用对应标准：** 开始时从综合、风景旅行、建筑空间、人文纪实、人像、家庭、朋友、Vlog/活动或自定义中选择；每类素材使用针对性的筛选标准，不把同一套评分模板反复套用到所有内容。
+- **用分类参考校准审美，而不追逐热度：** 风景与建筑可参考 500px、YouTube、ShotDeck；人像与纪实可参考 LensCulture、Magnum Photos；关系影像与视频叙事还会参考 Vimeo Staff Picks。Instagram、小红书和 X 只提供趋势线索，不以点赞量代替视觉语言与叙事判断；[完整分类参考见“参考网站”](#参考网站)。
+- **照片与视频统一分层，另设情感通道：** 输出主选、备选复筛和纪念留档；亲友关系与不可替代的情感瞬间可以独立于纯技术质量获得保留。
+- **交付方式可选，原片始终不动：** 用户可选择链接或副本；视频可选择只标时间码或导出新的候选片段。原文件永不移动、覆盖或删除。
+
 一个面向个人照片与视频的保守型初筛 Skill。它先排除明确不可用的素材，再把主选、可用备选、重复项和具有亲情或友情价值的瞬间留给用户复筛，而不是替用户做最终决定。
 
 ## 命名灵感
 
 名称 **Shining Moments** 的灵感来自《煌めく瞬間に捕われて》，中文常译作《捕捉闪耀的瞬间》。这里的“闪耀”既指构图、光线和叙事出色的画面，也指技术不完美但不可替代的亲情、友情和人生瞬间。
+
+## Agent 与模型兼容性
+
+Shining Moments 并非 Codex 专用。核心 `SKILL.md`、分类与筛选规则、`references/` 参考资料和 `scripts/build_review_set.py` 整理脚本本身不绑定具体模型；只要 Agent 能读取这些文件并具备所需工具，就能采用同一套流程。
+
+- **本机 Codex：** 当前安装于 `~/.codex/skills/shining-moments`，属于 Codex 个人 Skills 目录，因此 Codex 能自动发现。其他 Agent 需要把完整 Skill 目录安装到各自官方支持的 Skills 位置，或在任务中手动读取 `SKILL.md`。
+- **GitHub Copilot：** 官方文档列出的项目 Skills 位置是 `.github/skills/<skill-name>`、`.agents/skills/<skill-name>` 和 `.claude/skills/<skill-name>`；个人 Skills 位置是 `~/.copilot/skills/<skill-name>` 或 `~/.agents/skills/<skill-name>`，每个 Skill 子目录内放置 `SKILL.md`。参见 [About agent skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) 和 [Adding agent skills for GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills)。
+- **Google 的相关 Agent 环境：** Google Gemini API managed agents 使用的 Antigravity runtime 可从 `.agents/skills/<skill-name>/SKILL.md` 自动发现 Skill；这不代表所有 Google 聊天产品都具有相同能力。参见 [Building managed agents](https://ai.google.dev/gemini-api/docs/custom-agents)。
+- **Codex 元数据：** `agents/openai.yaml` 只提供 Codex 的界面与调用元数据；其他 Agent 可以忽略它，不影响核心 Skill。
+
+普通聊天模型也可以采用这里的筛选准则并协助判断，但如果没有本地文件访问、图片/视频分析和命令执行工具，就无法自动遍历素材、创建链接或副本，也无法导出视频片段。对于上面未列出的 Agent，不预设其自动发现机制，请以该产品的官方文档为准或让它直接读取 `SKILL.md`。
+
+实际执行依赖：Python 3.10+；选择导出视频候选片段时需要 `ffmpeg` 和 `ffprobe`；链接模式需要操作系统支持符号链接。
 
 ## 开始任务时的三个选择
 

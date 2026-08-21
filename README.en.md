@@ -10,11 +10,33 @@ English | [简体中文](README.md)
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
 </p>
 
+## Core highlights
+
+Shining Moments is a conservative “first filter”: it narrows the review set while leaving the final choice to the user.
+
+- **Choose the material type before applying criteria:** Start with Mixed, Landscape/Travel, Architecture/Space, Documentary/Culture, Portrait, Family, Friends, Vlog/Event, or Custom. Each type uses targeted criteria instead of repeatedly applying one generic scoring template.
+- **Calibrate aesthetics with category-relevant references, not popularity:** Landscape and architecture can draw from 500px, YouTube, and ShotDeck; portrait and documentary work can draw from LensCulture and Magnum Photos; relationship footage and video storytelling can also draw from Vimeo Staff Picks. Instagram, Xiaohongshu, and X are trend signals only—likes never replace visual-language or narrative judgment. See the [full categorized reference list](#reference-sites).
+- **Organize photos and videos consistently, with a separate emotional channel:** The review set is divided into selects, alternatives for re-screening, and memory keeps. Family, friendship, and irreplaceable emotional moments can be preserved independently of purely technical quality.
+- **Choose the delivery method without touching originals:** Use symbolic links or copies; for video, keep timecodes only or export new candidate clips. Original files are never moved, overwritten, or deleted.
+
 A conservative first-pass curation Skill for personal photos and videos. It removes only confidently unusable media, then leaves selects, usable alternatives, duplicates, and relationship-rich moments for the user's final review.
 
 ## Name inspiration
 
 **Shining Moments** is inspired by the Japanese song title *煌めく瞬間に捕われて*, commonly rendered in Chinese as “捕捉闪耀的瞬间.” Here, “shining” means both aesthetically strong frames and technically imperfect but irreplaceable moments of family, friendship, and life.
+
+## Agent and model compatibility
+
+Shining Moments is not Codex-only. Its core `SKILL.md`, category and selection rules, `references/` materials, and `scripts/build_review_set.py` organizer are model-independent. Any agent that can read these files and access the required tools can follow the same workflow.
+
+- **Codex on this machine:** It is currently installed at `~/.codex/skills/shining-moments`, the personal Codex Skills directory, so Codex can discover it automatically. Other agents must install the complete Skill directory in a Skills location they officially support, or be instructed to read `SKILL.md` directly.
+- **GitHub Copilot:** GitHub documents `.github/skills/<skill-name>`, `.agents/skills/<skill-name>`, and `.claude/skills/<skill-name>` for project skills. Personal skills go in `~/.copilot/skills/<skill-name>` or `~/.agents/skills/<skill-name>`, with `SKILL.md` inside each skill directory. See [About agent skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) and [Adding agent skills for GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills).
+- **Google's related agent environment:** The Antigravity runtime used by Gemini API managed agents can auto-discover a skill at `.agents/skills/<skill-name>/SKILL.md`. This does not imply that every Google chat product has the same capability. See [Building managed agents](https://ai.google.dev/gemini-api/docs/custom-agents).
+- **Codex metadata:** `agents/openai.yaml` supplies Codex UI and invocation metadata. Other agents can ignore it without affecting the core Skill.
+
+An ordinary chat model can still apply the written selection criteria and help reason about choices. Without local-file access, image/video analysis, and command-execution tools, however, it cannot automatically inventory media, create links or copies, or export video clips. For agents not listed above, do not assume automatic discovery; follow that product's official documentation or have it read `SKILL.md` directly.
+
+Runtime requirements: Python 3.10+; exporting new video candidate clips requires `ffmpeg` and `ffprobe`; link mode requires operating-system support for symbolic links.
 
 ## The three opening choices
 
