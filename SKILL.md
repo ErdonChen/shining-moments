@@ -15,17 +15,18 @@ This is a conservative first filter, not a final edit. Remove only confidently u
 
 ## Start every task
 
-Run **Connectivity check and live references** before inspecting media or asking for source/output paths:
+Before inspecting media, make the material choice and complete the reference gate in this order:
 
-1. Check whether the current environment can reach at least two public reference-site endpoints from [references/reference-source-map.json](references/reference-source-map.json). Use the environment's available connection as configured; do not require a particular connection method. Record time, endpoints, result, and limitation in `connectivity_check`.
-2. If the check fails, state exactly: **“当前无法查阅参考网站，因此不能获得实时参考/近期趋势。”** Then ask whether the user agrees to continue with existing static aesthetic knowledge or prior impressions. Without explicit agreement, pause before inventory or culling. Never silently downgrade or describe static knowledge as live observation.
-3. If connectivity succeeds, continue with live research. A successful opening check does not prove every source is accessible; record per-source restrictions honestly.
+1. **Material type:** ask first for `mixed`, `landscape-travel`, `architecture-space`, `documentary-culture`, `portrait`, `family`, `friends`, `vlog-event`, or `custom`; default `mixed`. Read only its profile in [references/category-profiles.md](references/category-profiles.md). Mixed mode routes each item separately.
+2. **Route the reference sources:** use [references/reference-source-map.json](references/reference-source-map.json) to determine the sources relevant to the chosen type. Mixed mode routes all canonical sources. For `custom`, use the user's brief to route at least two relevant sources when the catalog offers them. Do not perform a generic connectivity check before this routing choice.
+3. **Connectivity check and live references**: as the first execution phase of screening, check whether the current environment can reach at least two public endpoints from the routed source set. Use the environment's available connection as configured; do not require a particular connection method. Record time, endpoints, result, and limitation in `connectivity_check`.
+4. If the check fails, state exactly: **“当前无法查阅参考网站，因此不能获得实时参考/近期趋势。”** Then ask whether the user agrees to continue with existing static aesthetic knowledge or prior impressions. Without explicit agreement, pause before inventory or culling. Never silently downgrade or describe static knowledge as live observation.
+5. If connectivity succeeds, continue with live research. A successful opening check does not prove every source is accessible; record per-source restrictions honestly.
 
-After that gate is ready, confirm the read-only source and a new, separate output directory, then ask one compact opening prompt in this order:
+After the reference gate validates as ready, confirm the read-only source and a new, separate output directory, then ask the remaining opening choices:
 
-1. **Material type:** `mixed`, `landscape-travel`, `architecture-space`, `documentary-culture`, `portrait`, `family`, `friends`, `vlog-event`, or `custom`; default `mixed`. Read only its profile in [references/category-profiles.md](references/category-profiles.md). Mixed mode routes each item separately.
-2. **Organization mode:** `link` or `copy`; default `link`. Explain that links use the least space. Copy mode makes lightweight files for human re-screening: directly reviewable photos are safely copied, RAW uses or generates JPEG, and selected high-resolution video intervals become about-720p clips instead of copying whole high-bitrate videos. This substantially reduces the review directory but is not zero-storage; confirm this trade-off before writing.
-3. **Video delivery, when relevant:** in link mode, default to `timecodes` and offer separate new clips; in copy mode, default to lightweight `clips`. If copy mode uses explicit `timecodes`, keep only source/timecode mappings and do not copy whole source videos.
+1. **Organization mode:** `link` or `copy`; default `link`. Explain that links use the least space. Copy mode makes lightweight files for human re-screening: directly reviewable photos are safely copied, RAW uses or generates JPEG, and selected high-resolution video intervals become about-720p clips instead of copying whole high-bitrate videos. This substantially reduces the review directory but is not zero-storage; confirm this trade-off before writing.
+2. **Video delivery, when relevant:** in link mode, default to `timecodes` and offer separate new clips; in copy mode, default to lightweight `clips`. If copy mode uses explicit `timecodes`, keep only source/timecode mappings and do not copy whole source videos.
 
 Never move, overwrite, or delete originals, and never reuse a non-empty output directory.
 

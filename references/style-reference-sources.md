@@ -4,7 +4,7 @@ Reference research is a required calibration step before culling. Observe curren
 
 ## Source accounting
 
-Use [reference-source-map.json](reference-source-map.json) as the canonical registry. After the material type is known:
+Use [reference-source-map.json](reference-source-map.json) as the canonical registry. Choose the material type first, route its source set, and then run the connectivity check against that set:
 
 - visit every source whose `required_for` includes the active type;
 - for `mixed`, visit all canonical sources;

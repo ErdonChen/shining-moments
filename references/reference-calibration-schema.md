@@ -1,6 +1,6 @@
 # Reference Calibration Evidence
 
-Create `reference-calibration.json` before inventory or culling. It is an audit trail for live observation and the connectivity decision, not a cache of permanent style claims.
+Choose the material type, route its relevant sources from [reference-source-map.json](reference-source-map.json), and only then create `reference-calibration.json` before inventory or culling. Probe endpoints from that routed set. The file is an audit trail for live observation and the connectivity decision, not a cache of permanent style claims.
 
 ## Readiness branches
 
