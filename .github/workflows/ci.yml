@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate Skill metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          skill = Path("SKILL.md").read_text(encoding="utf-8")
+          agent = Path("agents/openai.yaml").read_text(encoding="utf-8")
+          assert "\nname: shining-moments\n" in skill, "Unexpected Skill name"
+          assert (
+              'default_prompt: "Use $shining-moments to make a conservative '
+              'first-pass selection of my photos and videos."' in agent
+          ), "Unexpected default prompt"
+          PY
