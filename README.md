@@ -15,7 +15,7 @@
 Shining Moments 是一次保守的“第一次过滤”：它帮助缩小复筛范围，但把最终选择权留给用户。
 
 - **先选素材类型，再使用对应标准：** 开始时从综合、风景旅行、建筑空间、人文纪实、人像、家庭、朋友、Vlog/活动或自定义中选择；每类素材使用针对性的筛选标准，不把同一套评分模板反复套用到所有内容。
-- **用分类参考校准审美，而不追逐热度：** 风景与建筑可参考 500px、YouTube、ShotDeck；人像与纪实可参考 LensCulture、Magnum Photos；关系影像与视频叙事还会参考 Vimeo Staff Picks。Instagram、小红书和 X 只提供趋势线索，不以点赞量代替视觉语言与叙事判断；[完整分类参考见“参考网站”](#参考网站)。
+- **自动公开来源打底，可选手动增强：** 素材类型确定后，先展示无需登录的照片/视频公开来源；用户可自选，未选择时使用分类默认。自动校准必须在本次运行中看到至少两个合适来源的实际图片或视频。YouTube、Bilibili、Vimeo、Instagram 和小红书只作为可选手动增强；[完整分层规则见“参考网站”](#参考网站)。
 - **照片与视频统一分层，另设情感通道：** 输出主选、备选复筛和纪念留档；亲友关系与不可替代的情感瞬间可以独立于纯技术质量获得保留。
 - **副本会自动轻量化，不直接搬运大文件：** 链接模式最省空间；副本模式面向人工复筛，RAW 优先复用配对 JPEG，否则生成 JPEG 审看副本，4K/1080p 视频只把入选时间段导成约 720p 轻量片段，不复制整条高码率原视频。这会显著降低复筛目录占用，但不是“零占用”；脚本会先给出空间估算。
 - **保持可追溯与原件安全：** 照片、视频与轻量副本都会记录原路径、类别、理由和时间码映射。原文件永不移动、覆盖或删除；正式剪辑仍使用原件。
@@ -39,9 +39,9 @@ Shining Moments 并非 Codex 专用。核心 `SKILL.md`、分类与筛选规则�
 
 实际执行依赖：Python 3.10+；生成 RAW 审看 JPEG 需要能解码该相机格式的 ImageMagick (`magick`)、RawTherapee CLI、darktable CLI 或 macOS `sips` 之一（有配对 JPEG 时不需要转换器）；导出视频审看片段需要 `ffmpeg` 和 `ffprobe`；链接模式需要操作系统支持符号链接。转换器或视频工具缺失/失败时，脚本会保留原件映射、在报告中标记 `not-generated` / `failed` 并返回部分成功状态，不会伪装成已生成。
 
-## 开始任务时的三个选择
+## 开始任务时的四个步骤
 
-开始前先确认素材来源和一个全新的输出目录，然后依次询问以下三项。
+开始前先确认素材来源和一个全新的输出目录，然后依次完成以下四步。
 
 ### 第一步：选择素材类型
 
@@ -59,14 +59,20 @@ Shining Moments 并非 Codex 专用。核心 `SKILL.md`、分类与筛选规则�
 
 未选择时默认使用“综合/混合”。即使选择了其他类型，关系与纪念价值仍是安全保留底线。
 
-### 第二步：选择整理方式
+### 第二步：选择参考来源
+
+Skill 会先按素材类型以及照片/视频范围展示适用的自动公开来源。用户可以选择其中一部分；没有选择时使用该类型的默认来源。自动来源无需登录，并且只有本次运行中实际可见的完整图片或可播放视频才算校准证据。
+
+自动来源选定后，Skill 会提供可选的手动增强来源。拒绝或无法使用手动增强不会阻塞任务，流程会继续使用自动公开来源。来源分层、登录边界和完整站点清单见[“参考网站”](#参考网站)。
+
+### 第三步：选择整理方式
 
 - **建立链接（默认）**：不复制媒体内容，是最省空间的方式；仍会产生少量链接、清单和报告数据。
 - **建立副本**：生成便于人工复筛的轻量文件。普通可直接审看的 JPEG/HEIC/PNG 等保持安全副本行为；RAW → JPEG 审看副本，4K/1080p 推荐时间段 → 约 720p 审看片段。不会直接复制大体积 RAW 或整条高码率视频，但仍会占用空间，执行前会显示估算。
 
 选择副本时，Skill 会在写入前再确认上述轻量化规则与空间取舍。两种方式都不会移动、覆盖或删除原文件。非空输出目录会被拒绝，避免覆盖旧结果。
 
-### 第三步：选择视频交付方式
+### 第四步：选择视频交付方式
 
 - **链接模式默认只标时间码**：建立整条原视频的链接，在清单中标注推荐片段；也可显式选择另存新片段。
 - **副本模式默认导出轻量候选片段**：主选、备选和纪念留档中有时间码的入选片段会导出新的 H.264/AAC MP4。横屏最大 1280×720，竖屏最大 720×1280；低于或等于该范围的源不放大、不拉伸。
@@ -119,16 +125,16 @@ python3 scripts/build_review_set.py \
 
 ## 参考网站
 
-这些网站用于校准构图、光线、动作、节奏和叙事方式，不复制具体作品，也不把点赞量或播放量当作质量分数。
+这些网站用于校准构图、光线、动作、节奏和叙事方式，不复制具体作品，也不把点赞量或播放量当作质量分数。Skill 会按素材类型动态选择适用子集；下表是唯一的用户侧来源分层说明。
 
-| 类型 | 参考站点 |
-|---|---|
-| 风景、旅行与地点叙事 | [500px](https://500px.com/)、[YouTube](https://www.youtube.com/)、[ShotDeck](https://shotdeck.com/)、[National Geographic Photography](https://www.nationalgeographic.com/photography/) |
-| 建筑与空间 | [ArchDaily](https://www.archdaily.com/)、[Dezeen](https://www.dezeen.com/)、ShotDeck |
-| 人像、人文与纪实 | [LensCulture](https://www.lensculture.com/)、[Magnum Photos](https://www.magnumphotos.com/)、Instagram、小红书 |
-| 家庭、亲情与友情 | [Documentary Family Awards](https://documentaryfamilyawards.com/)、[Family Photojournalist Association](https://www.fpja.com/)、[This Is Reportage](https://thisisreportage.com/)、小红书 |
-| 视频节奏与情感叙事 | [Vimeo Staff Picks](https://vimeo.com/channels/staffpicks)、[NOWNESS](https://www.nowness.com/)、YouTube |
-| 趋势与作者发现 | Instagram、小红书、[X](https://x.com/)；只作发现入口，不以热度判断质量 |
+| 来源层级 | 照片网站 | 视频网站 | 使用规则 |
+|---|---|---|---|
+| 自动公开来源 | [Unsplash](https://unsplash.com/)、[Pexels Photos](https://www.pexels.com/)、[Flickr 公开内容](https://www.flickr.com/explore)、[Wikimedia Commons 图片](https://commons.wikimedia.org/wiki/Main_Page) | [Pexels Videos](https://www.pexels.com/videos/)、[Pixabay Videos](https://pixabay.com/videos/)、[Mixkit](https://mixkit.co/free-stock-video/)、适用时使用 [Wikimedia Commons 视频](https://commons.wikimedia.org/wiki/Category:Videos) | 无需登录。用户可选择来源；未选择时使用分类默认。只有本次运行中实际可见的完整图片或视频播放才算证据，且自动视觉校准至少需要两个合适来源。 |
+| 可选手动增强 | [Instagram](https://www.instagram.com/)、[小红书](https://www.xiaohongshu.com/explore) | [YouTube](https://www.youtube.com/)、[Bilibili](https://www.bilibili.com/)、[Vimeo](https://vimeo.com/)、Instagram、小红书 | 用户必须先在自己的可见浏览器中自行完成登录或挑战，再确认已准备好及所选来源；只使用浏览器中实际可见的内容。 |
+
+手动增强过程中，Skill **永不索取、接收、保存或处理**用户名、密码、MFA 验证码、Cookie、账户凭据或其他认证秘密，也不会绕过任何保护。用户拒绝或无法使用手动增强时，流程会退回并继续使用自动公开来源，不会因此阻塞。
+
+X 不属于自动路由，也不会作为手动增强选项。用户自己提供的 URL 或图片仍是用户输入，不会被当作路由来源或自动连通成功证据。只打开网页、看到文字、搜索摘要、缩略图或记忆中的平台风格，都不能算视觉校准。
 
 ## 使用方式
 

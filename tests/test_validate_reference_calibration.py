@@ -8,35 +8,9 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "validate_reference_calibration.py"
-
-SOURCE_IDS = (
-    "500px",
-    "youtube",
-    "shotdeck",
-    "national-geographic-photography",
-    "archdaily",
-    "dezeen",
-    "documentary-family-awards",
-    "family-photojournalist-association",
-    "lensculture",
-    "magnum-photos",
-    "this-is-reportage",
-    "instagram",
-    "vimeo-staff-picks",
-    "nowness",
-    "xiaohongshu",
-    "x",
-)
-
-VLOG_REQUIRED = {
-    "youtube",
-    "shotdeck",
-    "instagram",
-    "vimeo-staff-picks",
-    "nowness",
-    "xiaohongshu",
-    "x",
-}
+CATALOG_PATH = SKILL_DIR / "references" / "reference-source-map.json"
+CATALOG_PAYLOAD = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+CATALOG = {source["id"]: source for source in CATALOG_PAYLOAD["sources"]}
 
 PATTERN_DIMENSIONS = (
     "composition",
@@ -54,25 +28,6 @@ PATTERN_DIMENSIONS = (
     "opening_frame",
     "cover_frame",
 )
-
-SOURCE_ROLES = {
-    "500px": ["editorial", "author-discovery"],
-    "youtube": ["trend", "author-discovery"],
-    "shotdeck": ["editorial"],
-    "national-geographic-photography": ["editorial"],
-    "archdaily": ["editorial", "author-discovery"],
-    "dezeen": ["editorial", "trend"],
-    "documentary-family-awards": ["editorial", "author-discovery"],
-    "family-photojournalist-association": ["editorial", "author-discovery"],
-    "lensculture": ["editorial", "author-discovery"],
-    "magnum-photos": ["editorial", "author-discovery"],
-    "this-is-reportage": ["editorial", "author-discovery"],
-    "instagram": ["trend", "author-discovery"],
-    "vimeo-staff-picks": ["editorial", "author-discovery"],
-    "nowness": ["editorial", "author-discovery"],
-    "xiaohongshu": ["trend", "author-discovery"],
-    "x": ["trend", "author-discovery"],
-}
 
 
 class ValidateReferenceCalibrationTests(unittest.TestCase):
@@ -95,294 +50,465 @@ class ValidateReferenceCalibrationTests(unittest.TestCase):
             text=True,
         )
 
-    def live_source(self, source_id):
-        dimension = PATTERN_DIMENSIONS[SOURCE_IDS.index(source_id) % len(PATTERN_DIMENSIONS)]
+    def applicable_ids(self, access_mode):
         return {
-            "source_id": source_id,
-            "relevance": "relevant",
-            "access_status": "accessed",
-            "accessed_at": "2026-08-21T14:30:00+08:00",
-            "search_terms": ["recent travel vlog staff picks cinematic rhythm"],
-            "sample_scope": "Three public results or curated entries visible on the accessed page",
-            "discovery_mechanism": "Public search, editorial selection, or visible trend surface",
-            "access_limitations": "No material limitation observed in the public sample",
-            "evidence_urls": [f"https://example.test/{source_id}/sample"],
-            "roles": SOURCE_ROLES[source_id],
-            "keywords": ["human-scale", "observational", "rhythmic"],
-            "patterns": {
-                dimension: "A concrete, source-observed pattern used for calibration"
-            },
+            source_id
+            for source_id, source in CATALOG.items()
+            if source["access_mode"] == access_mode
+            and set(source["media_kinds"]) & {"photo", "video"}
+            and "vlog-event" in source["applicable_for"]
         }
 
-    def skipped_source(self, source_id):
+    def default_automatic_ids(self):
+        return {
+            source_id
+            for source_id in self.applicable_ids("automatic")
+            if "vlog-event" in CATALOG[source_id].get("default_for", [])
+        }
+
+    def observed_source(self, source_id):
+        source = CATALOG[source_id]
+        media_kind = next(
+            kind for kind in source["media_kinds"] if kind in {"photo", "video"}
+        )
+        record = {
+            "source_id": source_id,
+            "access_mode": source["access_mode"],
+            "selection_status": "selected",
+            "access_status": "accessed",
+            "calibration_use": "used",
+            "accessed_at": "2026-08-21T14:30:00+08:00",
+            "search_terms": ["recent travel event visual reference"],
+            "sample_scope": "Three actual public media samples visibly inspected",
+            "discovery_mechanism": "Public search or visible curated surface",
+            "access_limitations": "No material limitation in the inspected samples",
+            "visible_samples": [
+                {
+                    "url": f"https://example.test/{source_id}/visible-sample",
+                    "media_kind": media_kind,
+                    "visibility": (
+                        "full-image" if media_kind == "photo" else "video-playback"
+                    ),
+                    "observation": "A concrete visual pattern was visible in this sample",
+                }
+            ],
+            "roles": source["roles"],
+            "keywords": ["human-scale", "observational"],
+            "patterns": {
+                "composition": "The subject remains legible within its environment"
+            },
+        }
+        if source["access_mode"] == "automatic":
+            record["authentication_used"] = False
+        else:
+            record["user_visible_browser"] = True
+        return record
+
+    def failed_source(self, source_id):
+        source = CATALOG[source_id]
+        record = {
+            "source_id": source_id,
+            "access_mode": source["access_mode"],
+            "selection_status": "selected",
+            "access_status": "failed",
+            "calibration_use": "skipped",
+            "accessed_at": "2026-08-21T14:31:00+08:00",
+            "search_terms": ["recent travel event visual reference"],
+            "attempted_urls": [source["url"]],
+            "access_limitations": "The page loaded without an inspectable media sample",
+            "failure_reason": "Page-only or blocked-player evidence does not count",
+            "visible_samples": [],
+        }
+        if source["access_mode"] == "automatic":
+            record["authentication_used"] = False
+        return record
+
+    def skipped_source(self, source_id, reason="Not selected for this run"):
         return {
             "source_id": source_id,
-            "relevance": "skipped",
+            "access_mode": CATALOG[source_id]["access_mode"],
+            "selection_status": "not-selected",
             "access_status": "not-accessed",
-            "skip_reason": "This source does not directly inform the active Vlog/event material type",
+            "calibration_use": "skipped",
+            "skip_reason": reason,
+        }
+
+    def summary(self, automatic_success, manual_success=None):
+        manual_success = set(manual_success or [])
+        automatic_success = set(automatic_success)
+        editorial = next(
+            source_id
+            for source_id in sorted(automatic_success)
+            if "editorial" in CATALOG[source_id]["roles"]
+        )
+        author = next(
+            (
+                source_id
+                for source_id in sorted(automatic_success | manual_success)
+                if "author-discovery" in CATALOG[source_id]["roles"]
+            ),
+            None,
+        )
+        trend = next(
+            (
+                source_id
+                for source_id in sorted(manual_success)
+                if "trend" in CATALOG[source_id]["roles"]
+            ),
+            None,
+        )
+        cross_sources = sorted(automatic_success)[:2]
+        return {
+            "long_term_standards": [
+                {
+                    "observation": "Visible editorial samples favor motivated framing",
+                    "source_ids": [editorial],
+                }
+            ],
+            "recent_platform_trends": (
+                [
+                    {
+                        "observation": "A current manual sample opens on decisive action",
+                        "source_ids": [trend],
+                    }
+                ]
+                if trend
+                else []
+            ),
+            "author_style_signals": (
+                [
+                    {
+                        "observation": "One visible author sample uses close-follow movement",
+                        "source_ids": [author],
+                    }
+                ]
+                if author
+                else []
+            ),
+            "cross_source_patterns": [
+                {
+                    "observation": "Human-scale detail connects place and emotion",
+                    "source_ids": cross_sources,
+                }
+            ],
+            "applied_selection_rules": [
+                "Prefer intervals with a clear narrative and relationship beat"
+            ],
+            "pattern_dimensions": {
+                dimension: f"Visible calibration for {dimension.replace('_', ' ')}"
+                for dimension in PATTERN_DIMENSIONS
+            },
+            "popularity_use": "Discovery only; popularity is not a quality score",
+            "calibration_state_note": "Automatic sources were ready; failures were recorded",
         }
 
     def live_payload(self):
-        sources = [
-            self.live_source(source_id)
-            if source_id in VLOG_REQUIRED
-            else self.skipped_source(source_id)
-            for source_id in SOURCE_IDS
-        ]
+        automatic_offered = self.applicable_ids("automatic")
+        automatic_selected = self.default_automatic_ids()
+        manual_offered = self.applicable_ids("manual-enhancement")
+        sources = []
+        for source_id in CATALOG:
+            if source_id in automatic_selected:
+                sources.append(self.observed_source(source_id))
+            else:
+                sources.append(self.skipped_source(source_id))
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "material_type": "vlog-event",
-            "connectivity_check": {
-                "status": "reachable",
-                "checked_at": "2026-08-21T14:25:00+08:00",
-                "probe_targets": [
-                    "https://vimeo.com/channels/staffpicks",
-                    "https://www.youtube.com/",
-                ],
-                "detail": "Both public reference endpoints responded from the current environment",
+            "media_kinds": ["photo", "video"],
+            "automatic_selection": {
+                "offered_source_ids": sorted(automatic_offered),
+                "default_source_ids": sorted(automatic_selected),
+                "selected_source_ids": sorted(automatic_selected),
+                "selection_basis": "type-default",
             },
-            "calibration_mode": "live",
+            "automatic_calibration": {
+                "status": "ready",
+                "checked_at": "2026-08-21T14:25:00+08:00",
+                "successful_source_ids": sorted(automatic_selected),
+                "failed_source_ids": [],
+                "detail": "Selected automatic sources returned visible media",
+            },
+            "manual_enhancement": {
+                "status": "declined",
+                "offered_source_ids": sorted(manual_offered),
+                "selected_source_ids": [],
+                "user_readiness_confirmed": False,
+                "detail": "The user declined optional manual enhancement",
+            },
+            "calibration_mode": "automatic",
             "static_fallback_authorized": False,
             "sources": sources,
-            "calibration_summary": {
-                "long_term_standards": [
-                    {
-                        "observation": "Editorial samples favor motivated shot changes",
-                        "source_ids": ["vimeo-staff-picks", "nowness"],
-                    }
-                ],
-                "recent_platform_trends": [
-                    {
-                        "observation": "Recent public posts foreground a decisive opening image",
-                        "source_ids": ["xiaohongshu", "x", "instagram"],
-                    }
-                ],
-                "author_style_signals": [
-                    {
-                        "observation": "One creator repeats handheld close-follow movement",
-                        "source_ids": ["youtube"],
-                    }
-                ],
-                "cross_source_patterns": [
-                    {
-                        "observation": "Human-scale details bridge place and emotion",
-                        "source_ids": ["youtube", "nowness", "vimeo-staff-picks"],
-                    }
-                ],
-                "applied_selection_rules": [
-                    "Prefer intervals with a clear narrative function and emotional beat"
-                ],
-                "pattern_dimensions": {
-                    dimension: f"Observed calibration for {dimension.replace('_', ' ')}"
-                    for dimension in PATTERN_DIMENSIONS
-                },
-                "popularity_use": "Discovery only; likes and views are not quality scores",
-            },
+            "calibration_summary": self.summary(automatic_selected),
         }
 
-    def static_authorized_payload(self):
-        return {
-            "schema_version": 1,
-            "material_type": "vlog-event",
-            "connectivity_check": {
-                "status": "unavailable",
-                "checked_at": "2026-08-21T14:25:00+08:00",
-                "probe_targets": [
-                    "https://vimeo.com/channels/staffpicks",
-                    "https://www.youtube.com/",
-                ],
-                "detail": "Both reference-site checks failed from the current environment",
-            },
-            "calibration_mode": "static-authorized",
-            "static_fallback_authorized": True,
-            "static_authorization": {
-                "authorized_at": "2026-08-21T14:28:00+08:00",
-                "user_confirmation": "同意改用静态审美知识继续筛选",
-            },
-            "sources": [
-                {
-                    "source_id": source_id,
-                    "relevance": "relevant" if source_id in VLOG_REQUIRED else "skipped",
-                    "access_status": "not-accessed",
-                    "access_limitations": "Network preflight failed before live reference research",
-                    "skip_reason": (
-                        "This source does not directly inform the active Vlog/event material type"
-                        if source_id not in VLOG_REQUIRED
-                        else ""
-                    ),
-                }
-                for source_id in SOURCE_IDS
-            ],
-            "calibration_summary": {
-                "long_term_standards": [
-                    {
-                        "observation": "Static prior knowledge only",
-                        "source_ids": [],
-                    }
-                ],
-                "recent_platform_trends": [],
-                "author_style_signals": [],
-                "cross_source_patterns": [],
-                "applied_selection_rules": [
-                    "Use only established static principles explicitly authorized by the user"
-                ],
-                "pattern_dimensions": {},
-                "popularity_use": "No current popularity or trend claims were made",
-            },
-        }
+    def source_record(self, payload, source_id):
+        return next(
+            source for source in payload["sources"] if source["source_id"] == source_id
+        )
 
-    def test_live_calibration_is_ready_after_every_required_source_is_audited(self):
+    def set_automatic_selection(self, payload, selected, *, successful=None, failed=None):
+        selected = set(selected)
+        successful = set(selected if successful is None else successful)
+        failed = set([] if failed is None else failed)
+        self.assertEqual(selected, successful | failed)
+        payload["automatic_selection"]["selected_source_ids"] = sorted(selected)
+        payload["automatic_selection"]["selection_basis"] = "user-selected"
+        for index, record in enumerate(payload["sources"]):
+            source_id = record["source_id"]
+            if CATALOG[source_id]["access_mode"] != "automatic":
+                continue
+            if source_id in successful:
+                payload["sources"][index] = self.observed_source(source_id)
+            elif source_id in failed:
+                payload["sources"][index] = self.failed_source(source_id)
+            else:
+                payload["sources"][index] = self.skipped_source(source_id)
+        status = "ready" if len(successful) >= 2 else "partial" if successful else "unavailable"
+        payload["automatic_calibration"].update(
+            {
+                "status": status,
+                "successful_source_ids": sorted(successful),
+                "failed_source_ids": sorted(failed),
+            }
+        )
+        payload["calibration_mode"] = "automatic" if status == "ready" else status
+        if status == "ready":
+            payload["calibration_summary"] = self.summary(successful)
+
+    def complete_manual_enhancement(self, payload, source_id="youtube"):
+        payload["manual_enhancement"].update(
+            {
+                "status": "completed",
+                "selected_source_ids": [source_id],
+                "user_readiness_confirmed": True,
+                "detail": "The user completed login in a visible browser and confirmed readiness",
+            }
+        )
+        index = next(
+            index
+            for index, record in enumerate(payload["sources"])
+            if record["source_id"] == source_id
+        )
+        payload["sources"][index] = self.observed_source(source_id)
+        if payload["automatic_calibration"]["status"] == "ready":
+            payload["calibration_mode"] = "manual-enhanced"
+            payload["calibration_summary"] = self.summary(
+                payload["automatic_calibration"]["successful_source_ids"],
+                {source_id},
+            )
+
+    def test_default_automatic_calibration_with_manual_declined_is_ready(self):
         result = self.run_validator(self.live_payload())
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("ready-live", result.stdout)
+        self.assertIn("ready-automatic", result.stdout)
 
-    def test_unavailable_network_without_static_permission_pauses_before_culling(self):
-        payload = self.static_authorized_payload()
-        payload["calibration_mode"] = "paused"
-        payload["static_fallback_authorized"] = False
-        payload.pop("static_authorization")
+    def test_user_selected_automatic_subset_is_allowed(self):
+        payload = self.live_payload()
+        self.set_automatic_selection(payload, {"unsplash", "pexels-videos"})
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready-automatic", result.stdout)
+
+    def test_absent_selection_must_use_type_specific_defaults(self):
+        payload = self.live_payload()
+        payload["automatic_selection"]["selected_source_ids"] = [
+            "unsplash",
+            "pexels-videos",
+        ]
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("type-default", result.stderr)
+
+    def test_manual_enhancement_requires_visible_content_and_user_browser(self):
+        payload = self.live_payload()
+        self.complete_manual_enhancement(payload)
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready-manual-enhanced", result.stdout)
+
+        self.source_record(payload, "youtube")["user_visible_browser"] = False
+        result = self.run_validator(payload)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("visible browser", result.stderr)
+
+    def test_manual_decline_never_blocks_ready_automatic_calibration(self):
+        payload = self.live_payload()
+        payload["manual_enhancement"]["detail"] = (
+            "Manual enhancement was unavailable, so the automatic workflow continued"
+        )
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready-automatic", result.stdout)
+
+    def test_manual_failure_is_recorded_and_does_not_block_automatic_calibration(self):
+        payload = self.live_payload()
+        payload["manual_enhancement"].update(
+            {
+                "status": "cannot-use",
+                "selected_source_ids": ["youtube"],
+                "user_readiness_confirmed": True,
+                "detail": "The visible player remained blocked after the user's own login attempt",
+            }
+        )
+        index = next(
+            index
+            for index, record in enumerate(payload["sources"])
+            if record["source_id"] == "youtube"
+        )
+        payload["sources"][index] = self.failed_source("youtube")
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready-automatic", result.stdout)
+
+    def test_manual_evidence_cannot_replace_second_automatic_source(self):
+        payload = self.live_payload()
+        self.set_automatic_selection(payload, {"unsplash"})
+        self.complete_manual_enhancement(payload)
 
         result = self.run_validator(payload)
 
         self.assertEqual(result.returncode, 3)
-        self.assertIn(
-            "当前无法查阅参考网站，因此不能获得实时参考/近期趋势",
-            result.stderr,
-        )
-        self.assertIn("用户明确同意", result.stderr)
+        self.assertIn("一个自动公开来源", result.stderr)
 
-    def test_unavailable_network_with_explicit_static_permission_is_ready_static(self):
-        result = self.run_validator(self.static_authorized_payload())
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("ready-static-authorized", result.stdout)
-
-    def test_connectivity_check_requires_two_public_reference_endpoints(self):
+    def test_page_only_or_thumbnail_evidence_does_not_count(self):
         payload = self.live_payload()
-        payload["connectivity_check"]["probe_targets"] = [
-            "https://vimeo.com/channels/staffpicks"
-        ]
+        sample = self.source_record(payload, "unsplash")["visible_samples"][0]
+        sample["visibility"] = "page-only"
 
         result = self.run_validator(payload)
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("at least two", result.stderr)
+        self.assertIn("do not count", result.stderr)
 
-    def test_missing_required_live_source_is_rejected(self):
+    def test_failed_automatic_source_is_skipped_and_recorded(self):
+        payload = self.live_payload()
+        selected = {"unsplash", "pexels-videos", "mixkit"}
+        self.set_automatic_selection(
+            payload,
+            selected,
+            successful={"unsplash", "pexels-videos"},
+            failed={"mixkit"},
+        )
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready-automatic", result.stdout)
+
+        failed_record = self.source_record(payload, "mixkit")
+        failed_record["visible_samples"] = [
+            {
+                "url": "https://example.test/page-only",
+                "media_kind": "video",
+                "visibility": "video-playback",
+                "observation": "Invented",
+            }
+        ]
+        result = self.run_validator(payload)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("empty visible_samples", result.stderr)
+
+    def test_automatic_source_must_use_no_authentication(self):
+        payload = self.live_payload()
+        self.source_record(payload, "unsplash")["authentication_used"] = True
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("require no login", result.stderr)
+
+    def test_partial_and_unavailable_states_pause_before_culling(self):
+        partial = self.live_payload()
+        self.set_automatic_selection(partial, {"unsplash"})
+        result = self.run_validator(partial)
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("两个来源", result.stderr)
+
+        unavailable = self.live_payload()
+        self.set_automatic_selection(
+            unavailable,
+            {"unsplash", "pexels-videos"},
+            successful=set(),
+            failed={"unsplash", "pexels-videos"},
+        )
+        result = self.run_validator(unavailable)
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("当前无法查阅参考网站", result.stderr)
+
+    def test_explicit_static_fallback_can_continue_from_partial(self):
+        payload = self.live_payload()
+        self.set_automatic_selection(payload, {"unsplash"})
+        payload["calibration_mode"] = "static-authorized"
+        payload["static_fallback_authorized"] = True
+        payload["static_authorization"] = {
+            "authorized_at": "2026-08-21T14:40:00+08:00",
+            "user_confirmation": "同意记录限制并使用静态审美知识继续",
+        }
+        payload["calibration_summary"] = {
+            "long_term_standards": [
+                {"observation": "Static prior knowledge only", "source_ids": []}
+            ],
+            "recent_platform_trends": [],
+            "author_style_signals": [],
+            "cross_source_patterns": [],
+            "applied_selection_rules": ["Use conservative static principles only"],
+            "pattern_dimensions": {},
+            "popularity_use": "No current popularity claims were made",
+            "calibration_state_note": "Static fallback authorized after partial automatic evidence",
+        }
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ready-static-authorized-partial", result.stdout)
+
+    def test_authentication_secret_fields_are_rejected(self):
+        for key in ("username", "password", "mfa_code", "cookies"):
+            with self.subTest(key=key):
+                payload = self.live_payload()
+                payload["manual_enhancement"][key] = "must-not-be-handled"
+
+                result = self.run_validator(payload)
+
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("authentication-secret field", result.stderr)
+
+    def test_every_catalog_source_must_have_an_evidence_or_skip_record(self):
         payload = self.live_payload()
         payload["sources"] = [
-            source for source in payload["sources"] if source["source_id"] != "nowness"
+            record for record in payload["sources"] if record["source_id"] != "mixkit"
         ]
 
         result = self.run_validator(payload)
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("nowness", result.stderr)
+        self.assertIn("mixkit", result.stderr)
 
-    def test_restricted_source_requires_limit_and_public_fallback_evidence(self):
+    def test_summary_cannot_cite_failed_or_manual_unseen_sources(self):
         payload = self.live_payload()
-        instagram = next(
-            source for source in payload["sources"] if source["source_id"] == "instagram"
-        )
-        instagram["access_status"] = "restricted"
-        instagram["access_limitations"] = "Login wall blocked individual post inspection"
-        instagram["public_fallback_evidence_urls"] = [
-            "https://www.instagram.com/explore/tags/travelvlog/"
-        ]
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("ready-live", result.stdout)
-
-        instagram.pop("public_fallback_evidence_urls")
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("public fallback evidence", result.stderr.lower())
-
-    def test_unrelated_source_without_skip_reason_is_rejected(self):
-        payload = self.live_payload()
-        archdaily = next(
-            source for source in payload["sources"] if source["source_id"] == "archdaily"
-        )
-        archdaily["skip_reason"] = ""
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("skip_reason", result.stderr)
-
-    def test_static_mode_cannot_claim_live_access_or_recent_trends(self):
-        payload = self.static_authorized_payload()
-        payload["sources"][1]["access_status"] = "accessed"
         payload["calibration_summary"]["recent_platform_trends"] = [
-            {"observation": "Invented current trend", "source_ids": ["youtube"]}
+            {
+                "observation": "Unseen claimed trend",
+                "source_ids": ["instagram"],
+            }
         ]
 
         result = self.run_validator(payload)
 
         self.assertEqual(result.returncode, 2)
-        self.assertIn("static-authorized", result.stderr)
-
-    def test_static_mode_rejects_residual_live_evidence_fields(self):
-        payload = self.static_authorized_payload()
-        payload["sources"][1]["accessed_at"] = "2026-08-21T14:30:00+08:00"
-        payload["sources"][1]["evidence_urls"] = [
-            "https://www.youtube.com/watch?v=claimed-live"
-        ]
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("live evidence fields", result.stderr)
-
-    def test_static_mode_still_accounts_for_required_sources_as_relevant(self):
-        payload = self.static_authorized_payload()
-        youtube = next(
-            source for source in payload["sources"] if source["source_id"] == "youtube"
-        )
-        youtube["relevance"] = "skipped"
-        youtube["skip_reason"] = "Deadline pressure"
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("required source youtube", result.stderr)
-
-    def test_source_cannot_claim_a_role_outside_the_catalog(self):
-        payload = self.live_payload()
-        x_source = next(
-            source for source in payload["sources"] if source["source_id"] == "x"
-        )
-        x_source["roles"] = ["editorial"]
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("catalog roles", result.stderr)
-
-    def test_summary_layers_must_cite_sources_with_matching_roles(self):
-        payload = self.live_payload()
-        payload["calibration_summary"]["long_term_standards"][0]["source_ids"] = [
-            "x"
-        ]
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("long_term_standards", result.stderr)
-        self.assertIn("editorial", result.stderr)
-
-    def test_live_summary_observation_must_cite_a_source(self):
-        payload = self.live_payload()
-        payload["calibration_summary"]["long_term_standards"][0]["source_ids"] = []
-
-        result = self.run_validator(payload)
-
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("source_ids", result.stderr)
+        self.assertIn("unavailable sources", result.stderr)
 
 
 if __name__ == "__main__":

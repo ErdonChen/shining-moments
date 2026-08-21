@@ -1,106 +1,162 @@
 # Reference Calibration Evidence
 
-Choose the material type, route its relevant sources from [reference-source-map.json](reference-source-map.json), and only then create `reference-calibration.json` before inventory or culling. Probe endpoints from that routed set. The file is an audit trail for live observation and the connectivity decision, not a cache of permanent style claims.
+Create `reference-calibration.json` after source selection and before inventory or culling. The file records the current run's actual visible evidence, source failures, optional manual enhancement, and readiness state. It is not a cache of permanent site style.
 
-## Readiness branches
+## Readiness states
 
-| Connectivity | User authorization | `calibration_mode` | Result |
-|---|---|---|---|
-| reachable | not needed | `live` | Visit and account for all canonical sources; validate to `ready-live`. |
-| unavailable | absent or refused | `paused` | Show the required notice, ask once, and pause. Validator exits `3`. |
-| unavailable | explicit | `static-authorized` | Record the user's confirmation; make no live or recent-trend claims. |
+| Automatic visible sources | Manual status | `calibration_mode` | Validator result |
+|---:|---|---|---|
+| 2 or more | declined / cannot-use | `automatic` | `ready-automatic` |
+| 2 or more | completed with visible evidence | `manual-enhanced` | `ready-manual-enhanced` |
+| 1 | any | `partial` | exit `3`, pause for static-fallback decision |
+| 0 | any | `unavailable` | exit `3`, pause for static-fallback decision |
+| 0 or 1 | any, explicit static approval | `static-authorized` | `ready-static-authorized-partial` or `ready-static-authorized-unavailable` |
 
-The required notice is:
+Manual evidence never satisfies the two-source automatic gate. Declining or being unable to use manual enhancement does not block an otherwise ready automatic workflow.
 
-> 当前无法查阅参考网站，因此不能获得实时参考/近期趋势。
-
-Then ask whether the user agrees to continue with existing static aesthetic knowledge or prior impressions. Silence is not agreement. Do not inventory, inspect, classify, link, copy, or export media while the state is `paused`.
-
-## Top-level fields
+## Top-level structure
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "material_type": "vlog-event",
-  "connectivity_check": {
-    "status": "reachable",
-    "checked_at": "2026-08-21T14:25:00+08:00",
-    "probe_targets": [
-      "https://vimeo.com/channels/staffpicks",
-      "https://www.youtube.com/"
-    ],
-    "detail": "Both public endpoints responded from the current environment"
+  "media_kinds": ["photo", "video"],
+  "automatic_selection": {
+    "offered_source_ids": ["unsplash", "pexels-photos", "flickr-public", "wikimedia-commons-photos", "pexels-videos", "pixabay-videos", "mixkit", "wikimedia-commons-videos"],
+    "default_source_ids": ["unsplash", "pexels-photos", "flickr-public", "pexels-videos", "pixabay-videos", "mixkit", "wikimedia-commons-videos"],
+    "selected_source_ids": ["unsplash", "pexels-photos", "flickr-public", "pexels-videos", "pixabay-videos", "mixkit", "wikimedia-commons-videos"],
+    "selection_basis": "type-default"
   },
-  "calibration_mode": "live",
+  "automatic_calibration": {
+    "status": "ready",
+    "checked_at": "2026-08-21T14:25:00+08:00",
+    "successful_source_ids": ["unsplash", "pexels-videos"],
+    "failed_source_ids": ["pexels-photos", "flickr-public", "pixabay-videos", "mixkit", "wikimedia-commons-videos"],
+    "detail": "Two automatic sources returned actual visible media; other selected sources failed and were skipped"
+  },
+  "manual_enhancement": {
+    "status": "declined",
+    "offered_source_ids": ["youtube", "bilibili", "vimeo", "instagram", "xiaohongshu"],
+    "selected_source_ids": [],
+    "user_readiness_confirmed": false,
+    "detail": "The user declined optional manual enhancement; automatic research continued"
+  },
+  "calibration_mode": "automatic",
   "static_fallback_authorized": false,
   "sources": [],
   "calibration_summary": {}
 }
 ```
 
-Use ISO-8601 timestamps. Do not record credentials, cookies, tokens, or other secrets.
+`offered_source_ids` must contain every applicable catalog source. `default_source_ids` comes from the material type and media kinds. When the user does not choose sources, set `selection_basis` to `type-default` and copy the defaults into `selected_source_ids`. Use `user-selected` for an explicit subset and `custom-brief` only for custom material.
 
-## Live source record
-
-Include exactly one record for every source in [reference-source-map.json](reference-source-map.json). Required sources are `relevant`. Every other source is either researched as `relevant` or marked `skipped` with a project-specific reason.
+## Successful automatic source
 
 ```json
 {
-  "source_id": "vimeo-staff-picks",
-  "relevance": "relevant",
+  "source_id": "unsplash",
+  "access_mode": "automatic",
+  "selection_status": "selected",
   "access_status": "accessed",
+  "calibration_use": "used",
+  "authentication_used": false,
   "accessed_at": "2026-08-21T14:30:00+08:00",
-  "search_terms": ["recent travel documentary Staff Picks"],
-  "sample_scope": "Eight current Staff Picks; four films watched beyond thumbnails",
-  "discovery_mechanism": "Human-curated Staff Picks channel",
-  "access_limitations": "Public video and metadata available; comments not sampled",
-  "evidence_urls": ["https://vimeo.com/channels/staffpicks"],
+  "search_terms": ["Japan travel dawn lake"],
+  "sample_scope": "Four full images opened and visibly inspected",
+  "discovery_mechanism": "Public search results",
+  "access_limitations": "No material limitation in the inspected sample",
+  "visible_samples": [
+    {
+      "url": "https://unsplash.com/photos/example",
+      "media_kind": "photo",
+      "visibility": "full-image",
+      "observation": "The foreground figure establishes scale against layered dawn haze"
+    }
+  ],
   "roles": ["editorial", "author-discovery"],
-  "keywords": ["observational", "human-scale", "motivated-cut"],
+  "keywords": ["human-scale", "layered-depth"],
   "patterns": {
-    "camera_movement": "Movement follows subject action instead of decorating static views",
-    "emotional_peak": "Reaction and aftermath are held after the key action"
+    "composition": "A small foreground subject anchors a deep landscape"
   }
 }
 ```
 
-For `restricted`, retain the same fields, state the exact limitation, and add `public_fallback_evidence_urls`. Limit claims to what those public pages, metadata, or thumbnails actually reveal.
+Automatic sources always set `authentication_used` to `false`. A photo sample requires `full-image`; a video sample requires `video-playback`. Home pages, text, metadata, search snippets, thumbnails, unavailable players, and remembered styles are not visible samples.
 
-A skipped record has this shape:
+## Failed selected source
 
 ```json
 {
-  "source_id": "archdaily",
-  "relevance": "skipped",
-  "access_status": "not-accessed",
-  "skip_reason": "The active family collection has no architecture or spatial-story emphasis"
+  "source_id": "mixkit",
+  "access_mode": "automatic",
+  "selection_status": "selected",
+  "access_status": "failed",
+  "calibration_use": "skipped",
+  "authentication_used": false,
+  "accessed_at": "2026-08-21T14:32:00+08:00",
+  "search_terms": ["family reunion"],
+  "attempted_urls": ["https://mixkit.co/free-stock-video/"],
+  "access_limitations": "The page loaded but no video playback was visible",
+  "failure_reason": "Page-only access cannot support visual calibration",
+  "visible_samples": []
 }
 ```
 
-## Live calibration summary
+Failures remain in the audit trail and are skipped from calibration. Do not replace them with text-only, page-only, indexed, or remembered evidence.
 
-Provide these fields:
+## Unselected source
 
-- `long_term_standards`: observations supported by professional, award, editor, or staff selections;
-- `recent_platform_trends`: time-sensitive patterns from current platform samples;
-- `author_style_signals`: patterns tied to named creators and not generalized;
-- `cross_source_patterns`: each observation cites at least two `source_ids`;
-- `applied_selection_rules`: executable rules for this collection;
-- `pattern_dimensions`: concrete calibration for composition, light, color, viewpoint, subject distance, action/relationship, camera movement, shot duration, pacing, transition, emotional peak, narrative function, opening frame, and cover frame;
-- `popularity_use`: a statement that popularity metrics were used only for discovery.
+```json
+{
+  "source_id": "wikimedia-commons-photos",
+  "access_mode": "automatic",
+  "selection_status": "not-selected",
+  "access_status": "not-accessed",
+  "calibration_use": "skipped",
+  "skip_reason": "Not part of the user's selected automatic subset"
+}
+```
 
-Each observation is an object with `observation` and `source_ids`.
+Include exactly one source record for every catalog entry, including manual sources that were not offered or selected.
 
-## Authorized static mode
+## Manual enhancement
 
-When connectivity is unavailable and the user explicitly agrees:
+Manual enhancement can use applicable YouTube, Bilibili, Vimeo, Instagram, and Xiaohongshu sources. Before collection, the user completes login or challenges themselves in their own visible browser and confirms readiness plus selected sources. The Skill never asks for, receives, stores, or handles account credentials or any other authentication secrets and never bypasses protection.
+
+An accessed manual source uses the same evidence fields as an accessed automatic source, replaces `authentication_used` with `user_visible_browser: true`, and must include actual `full-image` or `video-playback` samples. A selected manual source that cannot expose visible media uses the failed-source shape and contributes no trend or author claim.
+
+Use `manual_enhancement.status` as follows:
+
+- `declined`: no selected sources, readiness is false, and automatic work continues;
+- `cannot-use`: selected or attempted sources produced no usable visible manual evidence;
+- `completed`: readiness is true, at least one selected manual source supplied visible evidence, and `calibration_mode` is `manual-enhanced` when automatic calibration is ready.
+
+## Calibration summary
+
+For ready automatic or manual-enhanced states, provide:
+
+- `long_term_standards`: observations citing successful automatic editorial sources;
+- `recent_platform_trends`: optional observations citing successful manual trend sources only;
+- `author_style_signals`: optional observations tied to successful sources with an author-discovery role;
+- `cross_source_patterns`: at least one observation citing two or more successful automatic sources;
+- `applied_selection_rules`: executable rules for the collection;
+- `pattern_dimensions`: concrete text for composition, light, color, viewpoint, subject distance, action/relationship, camera movement, shot duration, pacing, transition, emotional peak, narrative function, opening frame, and cover frame;
+- `popularity_use`: state that popularity was discovery-only;
+- `calibration_state_note`: state whether the result is automatic or manual-enhanced and summarize failures/limitations.
+
+Each observation has `observation` and `source_ids`. A summary may cite only source records with actual visible samples.
+
+## Partial, unavailable, and static-authorized states
+
+Set `automatic_calibration.status` from the successful automatic source count: `partial` for one and `unavailable` for zero. Without explicit static authorization, use the same value for `calibration_mode`, set `static_fallback_authorized` to `false`, and stop when the validator exits `3`.
+
+If the user explicitly authorizes static fallback:
 
 - set `calibration_mode` to `static-authorized` and `static_fallback_authorized` to `true`;
-- add `static_authorization.authorized_at` and the user's actual confirmation in `user_confirmation`;
-- keep sources required for the active material type marked `relevant`, set every source to `not-accessed`, and record the connectivity limitation;
-- omit live-evidence fields such as access time, queries, samples, evidence URLs, keywords, and observed patterns;
+- add `static_authorization.authorized_at` and `user_confirmation`;
+- retain all partial evidence and failed-source limitations;
 - keep `recent_platform_trends`, `author_style_signals`, and `cross_source_patterns` empty;
-- label any applied aesthetic guidance as static knowledge, not current evidence.
+- label applied guidance and `calibration_state_note` as static, not current visual calibration.
 
 ## Validate
 
@@ -109,7 +165,6 @@ python3 scripts/validate_reference_calibration.py \
   --input <reference-calibration.json>
 ```
 
-- exit `0`, `ready-live`: current evidence and all source records are complete;
-- exit `0`, `ready-static-authorized`: live evidence is unavailable and explicit authorization is recorded;
-- exit `3`: screening must remain paused for user authorization;
-- exit `2`: the evidence log is invalid or incomplete; fix it before culling.
+- exit `0`: a named ready state is printed;
+- exit `3`: automatic calibration is partial/unavailable and the user has not authorized static fallback;
+- exit `2`: the evidence log is structurally invalid or overclaims what was visible.
