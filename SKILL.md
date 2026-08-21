@@ -11,7 +11,7 @@ The name *Shining Moments* echoes the Japanese song title *煌めく瞬間に捕
 
 ## Core principle
 
-This is a conservative first filter, not a final edit. Remove only confidently unusable material. Preserve usable, uncertain, duplicate, and relationship-rich media for the user’s final judgment.
+This is a conservative first filter, not a final edit. Remove only confidently unusable material as `excluded`. Preserve uncertainty and relationship value, while preventing a redundant backup set from becoming no filter at all. The user keeps the final choice.
 
 ## Start every task
 
@@ -30,11 +30,14 @@ Read [references/selection-rubric.md](references/selection-rubric.md). Read [ref
 1. Inventory read-only: paths, type, dimensions or duration, capture time, corruption, and duplicate groups.
 2. Inspect representative frames and useful long-video intervals.
 3. Apply aesthetic/story and relationship/memory channels. Relationship value may rescue imperfect media when the interaction remains discernible.
-4. Classify each item or interval as `select`, `review`, `memory`, or `excluded`. A duplicate group may have one `select`; every other usable member goes to `review`.
-5. Create a UTF-8 CSV manifest with `source_path,decision,reason,start_time,end_time`. Use one row per useful video interval. Optionally add `paired_jpeg_path` for a known RAW+JPEG pair; otherwise same-stem `.jpg`/`.jpeg` is detected automatically.
-6. Run `scripts/build_review_set.py --manifest <csv> --output <dir> --mode link|copy --video-delivery auto|timecodes|clips`. Prefer `auto`: copy mode exports lightweight clips, link mode keeps timecodes. The script prints a rough, non-zero storage estimate before generation.
-7. Inspect `generation_status`, `review_asset_kind`, and `generation_detail` in `筛选清单.csv`. Verify counts, mappings, playable clips, links, sources, and exclusion reasons. Exit status `3` means the review set exists but one or more derivatives failed; do not present it as fully successful.
-8. Report uncertainty instead of rejecting guesses. Map every review file back to its high-quality original and tell the user to use originals for final editing.
+4. Run the normal first-pass classification as `select`, `review`, `memory`, or `excluded`. Do not ask about a backup percentage in the opening prompt.
+5. Deduplicate the candidate denominator: RAW+JPEG pairs and byte-identical files count once. Calculate `review_unique_candidates / unique_candidates`. The default review ceiling is 20%, or an explicit user-supplied alternative. It is a conditional ceiling, never a quota: at or below it, change nothing and never add weak items to fill it.
+6. Only above the ceiling, run backup overflow reduction until the deduplicated review ratio is at or below the ceiling. Remove redundancy first. An ordinary unchanged burst normally keeps at most 1–2 genuinely distinct `review` alternatives; an irreplaceable relationship progression may keep 3–5 only for distinct setup, peak, resolution, or relationship beats. Move usable remainder to `not_selected`, not `excluded` or `memory`.
+7. Choose retained representatives with the active category profile and reference calibration. For posed portraits or groups, prefer visible unobstructed faces, open eyes, natural or engaging expressions, suitable camera-facing gaze, composition, light, focus, and timing. For candid, documentary, or family interaction, let emotion, relationship, interaction, and story beat outweigh direct gaze when stronger. Popularity metrics never replace judgment.
+8. Create a UTF-8 CSV manifest with `source_path,decision,reason,start_time,end_time`. Use one row per useful video interval. For deterministic overflow handling, add `candidate_id,similarity_group,relationship_progression,story_beat,representative_score,capture_style,selection_evidence`; blank values remain valid. Optionally add `paired_jpeg_path` for a known RAW+JPEG pair; otherwise same-stem `.jpg`/`.jpeg` is detected automatically.
+9. Run `scripts/build_review_set.py --manifest <csv> --output <dir> --mode link|copy --video-delivery auto|timecodes|clips [--review-ceiling 0.20]`. Prefer `auto`: copy mode exports lightweight clips, link mode keeps timecodes. The script prints a rough, non-zero storage estimate before generation and records both the first-pass and final review ratios.
+10. Inspect `generation_status`, `review_asset_kind`, and `generation_detail` in `筛选清单.csv`; inspect `未入选清单.csv` separately from `排除清单.csv`. Verify counts, mappings, playable clips, links, sources, and reasons. Exit status `3` means the review set exists but one or more derivatives failed; do not present it as fully successful.
+11. Report uncertainty instead of rejecting guesses. Map every review file back to its high-quality original and tell the user to use originals for final editing.
 
 ## Lightweight copy contract
 
@@ -51,8 +54,9 @@ Read [references/selection-rubric.md](references/selection-rubric.md). Read [ref
 - `link + timecodes`: link each included source once, ordered by `select` > `review` > `memory`, and retain every interval in the manifest.
 - `copy + timecodes`: do not copy whole videos; retain their original paths and timecodes in the report and manifest.
 - `clips`: create lightweight review derivatives for timed included intervals only. A `memory` clip remains a sentimental review item, not a normal-edit recommendation.
-- Unrecoverably shaky ordinary footage may be excluded. Recognizable relationship footage stays `review`; unrecognizable known sentimental footage is `memory`.
-- `excluded` receives no link, copy, or clip; record its original path and concrete reason.
+- `not_selected` is usable but not shortlisted after judgment or overflow reduction. It receives no link, copy, or clip; retain its original path, first-pass decision, reason, and overflow action in `未入选清单.csv`.
+- `memory` is independently justified sentimental material, never overflow storage used to evade the review ceiling. Distinct relationship beats may be protected; an entire near-identical burst is not protected by default.
+- `excluded` is reserved for confidently unusable, corrupt, or unrecognizable non-sentimental media. It receives no link, copy, or clip; record its original path and concrete reason in `排除清单.csv`.
 - Never move, overwrite, delete, or recommend deleting originals.
 
 ## Output contract
@@ -61,5 +65,6 @@ Read [references/selection-rubric.md](references/selection-rubric.md). Read [ref
 - `02_备选_用户复筛/`
 - `03_纪念留档/`
 - `筛选清单.csv`
+- `未入选清单.csv`
 - `排除清单.csv`
 - `筛选报告.md`

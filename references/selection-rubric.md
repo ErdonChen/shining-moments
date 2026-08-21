@@ -35,7 +35,7 @@ Do not reject a clip from one bad frame. Sample the beginning, middle, end, scen
 
 - **75–100:** strong `select` candidate when technically viable.
 - **45–74:** `review`; the user decides whether it serves the edit.
-- **Below 45:** exclude only when it also lacks relationship value and is confidently unusable or redundant filler.
+- **Below 45:** during the normal first pass, do not use a low score alone to mark usable material `excluded`. If conditional overflow reduction later omits that usable item from the shortlist, use `not_selected`; reserve `excluded` for confidently unusable or corrupt media without relationship value.
 
 ## Relationship and memory channel (20 points)
 
@@ -49,13 +49,30 @@ Score each dimension from 0–5:
 | Memory context | recognizable place, ritual, object, voice, phrase, or event meaningful to the people involved |
 
 - **14–20:** may enter `select` despite ordinary composition or minor technical flaws, if the moment remains understandable.
-- **8–13:** keep in `review`; aesthetic scoring cannot remove it.
+- **8–13:** relationship evidence strongly supports `review`, but a near-identical burst still needs distinct-beat comparison if overflow reduction triggers.
 - **1–7:** supporting evidence, not an automatic rescue.
 - **Known sentimental significance but visually unusable:** `memory`, never normal `select`.
 
 ## Duplicate policy
 
-Group exact and near-duplicates. Recommend the strongest representative for `select`, but put every other usable member in `review` so the user can compare expressions, gestures, and timing. For byte-identical files, prefer the canonical original with the richest metadata and highest valid resolution; if still tied, use a stable path order. Never exclude a usable item only because it is repetitive.
+Group exact and near-duplicates during the normal first pass. Recommend the strongest representative for `select`; use `review` for genuinely useful alternatives, not every technically usable frame. For byte-identical files, prefer the canonical original with the richest metadata and highest valid resolution; if still tied, use a stable path order. Repetition alone never makes a usable item `excluded`; a usable item omitted from the shortlist is `not_selected`.
+
+## Conditional backup overflow reduction
+
+After the normal first pass, calculate the review ratio against the deduplicated unique candidate set. A RAW+JPEG pair counts once, as does a group of byte-identical files. The default ceiling is 20%; an explicit user-supplied ceiling may replace it.
+
+- The percentage is a ceiling, never a quota or target. If the first-pass review ratio is at or below the ceiling, do nothing: neither prune good review items nor add weak ones to fill the percentage.
+- Only when the ratio is above the ceiling, run a second reduction pass until the ratio is at or below it. This is a post-classification check, not another opening question.
+- Remove unchanged redundancy first. Compare scene, identities, people count, expressions, pose or action, framing, and story beat. An ordinary same-scene/person burst normally keeps no more than 1–2 truly distinct `review` alternatives in addition to any deserved `select` representative.
+- An irreplaceable family or friend progression may keep 3–5 `review` or independently justified `memory` frames only when they carry genuinely different setup, peak, resolution, or relationship beats. The global review ceiling still wins when the collection is too small to hold that many review frames. Never retain an entire burst by default, and never relabel overflow as `memory`.
+- When a global trim is still required, use the active category profile and the calibrated visual/story standard. Popularity counts never substitute for judgment.
+
+### Representative evidence
+
+- **Posed portrait or group:** prefer visible and unobstructed faces, open eyes, natural or engaging expression, suitable camera-facing gaze, stronger composition and light, focus, and timing.
+- **Candid, documentary, family, or friendship:** do not mechanically reward direct camera gaze. Prefer the frame with stronger interaction, emotion, relationship clarity, authenticity, and story beat.
+
+For deterministic script handling, provide a stable `candidate_id` for known RAW pairs or duplicates when useful, a `similarity_group` for burst membership, `relationship_progression=true` only for irreplaceable progressions, a concrete `story_beat`, and a numeric `representative_score` derived from this rubric and the active category profile. `capture_style` and `selection_evidence` preserve why the score was assigned. The script also detects same-stem RAW+JPEG pairs and byte-identical files when these fields are absent.
 
 ## Long-video policy
 
@@ -81,6 +98,7 @@ Add one manifest row per useful interval with precise `start_time`, `end_time`, 
 | Decision | Meaning |
 |---|---|
 | `select` | strongest first-pass recommendations; still subject to user approval |
-| `review` | usable, uncertain, duplicate, repairable, or relationship-protected media for user re-screening |
-| `memory` | sentimental record not recommended for normal editing |
-| `excluded` | confidently unusable non-sentimental material; record only, never delete |
+| `review` | usable and genuinely useful alternative, uncertainty, repairable material, or a distinct relationship beat for user re-screening |
+| `memory` | independently justified sentimental record not recommended for normal editing; never overflow storage |
+| `not_selected` | usable but not shortlisted; no media derivative, retain original path and reason in `未入选清单.csv` |
+| `excluded` | confidently unusable, corrupt, or unrecognizable non-sentimental material; record only in `排除清单.csv`, never delete |

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -38,6 +40,9 @@ DECISION_ALIASES = {
     "memory": "memory",
     "留档": "memory",
     "纪念留档": "memory",
+    "not_selected": "not_selected",
+    "not-selected": "not_selected",
+    "未入选": "not_selected",
     "excluded": "excluded",
     "exclude": "excluded",
     "排除": "excluded",
@@ -90,6 +95,15 @@ OUTPUT_FIELDS = [
     "start_time",
     "end_time",
     "paired_jpeg_path",
+    "candidate_id",
+    "similarity_group",
+    "relationship_progression",
+    "story_beat",
+    "representative_score",
+    "capture_style",
+    "selection_evidence",
+    "first_pass_decision",
+    "overflow_action",
     "organized_path",
     "review_source_path",
     "review_asset_kind",
@@ -132,13 +146,22 @@ def parse_args() -> argparse.Namespace:
             "darktable-cli, then sips; other executables must accept SOURCE DESTINATION."
         ),
     )
+    parser.add_argument(
+        "--review-ceiling",
+        type=float,
+        default=0.20,
+        help=(
+            "Conditional review-ratio ceiling after deduplicating candidates; "
+            "overflow reduction runs only above this ratio (default: 0.20)."
+        ),
+    )
     return parser.parse_args()
 
 
 def normalize_decision(value: str, row_number: int) -> str:
     normalized = DECISION_ALIASES.get(value.strip().lower())
     if normalized is None:
-        allowed = ", ".join(sorted(CATEGORY_DIRS | {"excluded"}))
+        allowed = ", ".join(sorted(CATEGORY_DIRS | {"not_selected", "excluded"}))
         raise ValueError(
             f"row {row_number}: unsupported decision {value!r}; use one of {allowed}"
         )
@@ -163,6 +186,34 @@ def find_same_stem_jpeg(source: Path) -> Path | None:
             path.name.casefold(),
         ),
     )[0].resolve()
+
+
+def normalize_boolean(value: str, row_number: int, field: str) -> str:
+    normalized = value.strip().lower()
+    if not normalized:
+        return "false"
+    if normalized in {"true", "1", "yes", "y"}:
+        return "true"
+    if normalized in {"false", "0", "no", "n"}:
+        return "false"
+    raise ValueError(f"row {row_number}: {field} must be true or false")
+
+
+def normalize_score(value: str, row_number: int) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return "0"
+    try:
+        score = float(normalized)
+    except ValueError as exc:
+        raise ValueError(
+            f"row {row_number}: representative_score must be a finite number"
+        ) from exc
+    if not math.isfinite(score):
+        raise ValueError(
+            f"row {row_number}: representative_score must be a finite number"
+        )
+    return normalized
 
 
 def load_manifest(path: Path) -> list[dict[str, str]]:
@@ -219,6 +270,23 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
                     "start_time": start_time,
                     "end_time": end_time,
                     "paired_jpeg_path": paired_jpeg_path,
+                    "candidate_id": (raw.get("candidate_id") or "").strip(),
+                    "similarity_group": (raw.get("similarity_group") or "").strip(),
+                    "relationship_progression": normalize_boolean(
+                        raw.get("relationship_progression") or "",
+                        row_number,
+                        "relationship_progression",
+                    ),
+                    "story_beat": (raw.get("story_beat") or "").strip(),
+                    "representative_score": normalize_score(
+                        raw.get("representative_score") or "", row_number
+                    ),
+                    "capture_style": (raw.get("capture_style") or "").strip(),
+                    "selection_evidence": (
+                        raw.get("selection_evidence") or ""
+                    ).strip(),
+                    "first_pass_decision": decision,
+                    "overflow_action": "",
                     "organized_path": "",
                     "review_source_path": "",
                     "review_asset_kind": "",
@@ -230,6 +298,205 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
     if not rows:
         raise ValueError("manifest contains no media rows")
     return rows
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def unique_candidate_groups(rows: list[dict[str, str]]) -> list[list[int]]:
+    """Group manifest rows that represent the same deduplicated candidate."""
+
+    parents = list(range(len(rows)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    explicit_ids: dict[str, int] = {}
+    source_intervals: dict[tuple[str, str, str], int] = {}
+    for index, row in enumerate(rows):
+        interval_key = (
+            row["source_path"],
+            row["start_time"],
+            row["end_time"],
+        )
+        previous = source_intervals.setdefault(interval_key, index)
+        union(index, previous)
+        if row["candidate_id"]:
+            previous = explicit_ids.setdefault(row["candidate_id"], index)
+            union(index, previous)
+
+    for index, row in enumerate(rows):
+        if not row["paired_jpeg_path"]:
+            continue
+        pair_key = (
+            row["paired_jpeg_path"],
+            row["start_time"],
+            row["end_time"],
+        )
+        paired_index = source_intervals.get(pair_key)
+        if paired_index is not None:
+            union(index, paired_index)
+
+    size_buckets: dict[tuple[int, str, str], list[int]] = {}
+    for index, row in enumerate(rows):
+        source = Path(row["source_path"])
+        key = (source.stat().st_size, row["start_time"], row["end_time"])
+        size_buckets.setdefault(key, []).append(index)
+    digest_cache: dict[str, str] = {}
+    for indices in size_buckets.values():
+        if len(indices) < 2:
+            continue
+        digest_buckets: dict[str, int] = {}
+        for index in indices:
+            source_path = rows[index]["source_path"]
+            digest = digest_cache.get(source_path)
+            if digest is None:
+                digest = file_digest(Path(source_path))
+                digest_cache[source_path] = digest
+            previous = digest_buckets.setdefault(digest, index)
+            union(index, previous)
+
+    groups: dict[int, list[int]] = {}
+    for index in range(len(rows)):
+        groups.setdefault(find(index), []).append(index)
+    return sorted(groups.values(), key=lambda group: min(group))
+
+
+def candidate_rank(group: list[int], rows: list[dict[str, str]]) -> tuple[float, str]:
+    review_rows = [index for index in group if rows[index]["decision"] == "review"]
+    eligible = review_rows or group
+    best_score = max(float(rows[index]["representative_score"]) for index in eligible)
+    best_path = min(
+        rows[index]["source_path"]
+        for index in eligible
+        if float(rows[index]["representative_score"]) == best_score
+    )
+    return (-best_score, best_path)
+
+
+def best_review_row(group: list[int], rows: list[dict[str, str]]) -> int:
+    review_rows = [index for index in group if rows[index]["decision"] == "review"]
+    return min(
+        review_rows,
+        key=lambda index: (
+            -float(rows[index]["representative_score"]),
+            rows[index]["source_path"],
+        ),
+    )
+
+
+def apply_review_overflow(
+    rows: list[dict[str, str]], review_ceiling: float
+) -> dict[str, int | float | bool]:
+    if not 0 <= review_ceiling <= 1:
+        raise ValueError("review ceiling must be between 0 and 1")
+
+    groups = unique_candidate_groups(rows)
+    review_groups = [
+        index
+        for index, group in enumerate(groups)
+        if any(rows[row_index]["decision"] == "review" for row_index in group)
+    ]
+    unique_count = len(groups)
+    initial_review_count = len(review_groups)
+    initial_ratio = initial_review_count / unique_count
+    triggered = initial_ratio > review_ceiling
+    stats: dict[str, int | float | bool] = {
+        "unique_candidate_count": unique_count,
+        "initial_review_count": initial_review_count,
+        "initial_review_ratio": initial_ratio,
+        "review_ceiling": review_ceiling,
+        "triggered": triggered,
+        "final_review_count": initial_review_count,
+        "final_review_ratio": initial_ratio,
+    }
+    if not triggered:
+        return stats
+
+    target_count = math.floor(unique_count * review_ceiling)
+    similarity_buckets: dict[str, list[int]] = {}
+    for group_index in review_groups:
+        group = groups[group_index]
+        best_index = best_review_row(group, rows)
+        similarity_group = rows[best_index]["similarity_group"]
+        key = similarity_group or f"__candidate_{group_index}"
+        similarity_buckets.setdefault(key, []).append(group_index)
+
+    retained: set[int] = set()
+    for group_indices in similarity_buckets.values():
+        ranked = sorted(group_indices, key=lambda index: candidate_rank(groups[index], rows))
+        relationship_progression = any(
+            rows[row_index]["relationship_progression"] == "true"
+            for group_index in group_indices
+            for row_index in groups[group_index]
+        )
+        story_beats = {
+            rows[best_review_row(groups[group_index], rows)]["story_beat"].casefold()
+            for group_index in group_indices
+            if rows[best_review_row(groups[group_index], rows)]["story_beat"]
+        }
+        if relationship_progression and story_beats:
+            by_beat: dict[str, list[int]] = {}
+            for group_index in ranked:
+                row = rows[best_review_row(groups[group_index], rows)]
+                beat = row["story_beat"].casefold() or "__unspecified"
+                by_beat.setdefault(beat, []).append(group_index)
+            distinct = [indices[0] for indices in by_beat.values()]
+            retained.update(
+                sorted(
+                    distinct,
+                    key=lambda index: candidate_rank(groups[index], rows),
+                )[:5]
+            )
+        else:
+            retained.update(ranked[:2])
+
+    if len(retained) > target_count:
+        retained = set(
+            sorted(retained, key=lambda index: candidate_rank(groups[index], rows))[
+                :target_count
+            ]
+        )
+
+    for group_index in review_groups:
+        group = groups[group_index]
+        retained_row = best_review_row(group, rows) if group_index in retained else None
+        for row_index in group:
+            row = rows[row_index]
+            if row["decision"] != "review":
+                continue
+            if row_index == retained_row:
+                row["overflow_action"] = "retained-review-representative"
+                continue
+            original_reason = row["reason"]
+            row["decision"] = "not_selected"
+            row["reason"] = (
+                "usable but not shortlisted after backup overflow reduction; "
+                + original_reason
+            )
+            row["overflow_action"] = "moved-review-to-not-selected"
+
+    final_review_count = sum(
+        any(rows[row_index]["decision"] == "review" for row_index in group)
+        for group in groups
+    )
+    stats["final_review_count"] = final_review_count
+    stats["final_review_ratio"] = final_review_count / unique_count
+    return stats
 
 
 def unique_destination(folder: Path, filename: str) -> Path:
@@ -272,7 +539,7 @@ def resolve_video_delivery(mode: str, video_delivery: str) -> str:
 def should_export_clip(row: dict[str, str], video_delivery: str) -> bool:
     return (
         video_delivery == "clips"
-        and row["decision"] != "excluded"
+        and row["decision"] in CATEGORY_DIRS
         and is_video(row["source_path"])
         and bool(row["start_time"])
         and bool(row["end_time"])
@@ -421,7 +688,7 @@ def probe_duration(source: Path, ffprobe: str) -> float:
 def validate_clip_rows(rows: list[dict[str, str]], ffprobe: str) -> None:
     durations: dict[str, float] = {}
     for row in rows:
-        if row["decision"] == "excluded":
+        if row["decision"] not in CATEGORY_DIRS:
             continue
         if not is_video(row["source_path"]):
             continue
@@ -482,7 +749,7 @@ def estimate_review_storage(
 
     photo_rows: dict[str, dict[str, str]] = {}
     for row in rows:
-        if row["decision"] == "excluded" or is_video(row["source_path"]):
+        if row["decision"] not in CATEGORY_DIRS or is_video(row["source_path"]):
             continue
         current = photo_rows.get(row["source_path"])
         if current is None or CATEGORY_PRIORITY[row["decision"]] < CATEGORY_PRIORITY[
@@ -824,7 +1091,11 @@ def build_review_set(
     ffmpeg: str | None,
     ffprobe: str | None,
     raw_converter: str | None,
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+) -> tuple[
+    list[dict[str, str]],
+    list[dict[str, str]],
+    list[dict[str, str]],
+]:
     output.mkdir(parents=True, exist_ok=True)
     for folder_name in CATEGORY_DIRS.values():
         (output / folder_name).mkdir(exist_ok=True)
@@ -838,7 +1109,7 @@ def build_review_set(
     placement_rows: dict[str, dict[str, str]] = {}
     for row in rows:
         decision = row["decision"]
-        if decision == "excluded" or row["source_path"] in sources_with_clips:
+        if decision not in CATEGORY_DIRS or row["source_path"] in sources_with_clips:
             continue
         if (
             mode == "copy"
@@ -855,7 +1126,7 @@ def build_review_set(
     organized: dict[str, dict[str, str]] = {}
     if mode == "copy" and video_delivery == "timecodes":
         for row in rows:
-            if row["decision"] == "excluded" or not is_video(row["source_path"]):
+            if row["decision"] not in CATEGORY_DIRS or not is_video(row["source_path"]):
                 continue
             organized[row["source_path"]] = {
                 "organized_path": "",
@@ -982,10 +1253,15 @@ def build_review_set(
             )
 
     included_rows: list[dict[str, str]] = []
+    not_selected_rows: list[dict[str, str]] = []
     excluded_rows: list[dict[str, str]] = []
 
     for row in rows:
         decision = row["decision"]
+        if decision == "not_selected":
+            row["generation_status"] = "not-applicable"
+            not_selected_rows.append(row)
+            continue
         if decision == "excluded":
             row["generation_status"] = "not-applicable"
             excluded_rows.append(row)
@@ -1010,7 +1286,7 @@ def build_review_set(
             result.update(organized.get(row["source_path"], {}))
         included_rows.append(result)
 
-    return included_rows, excluded_rows
+    return included_rows, not_selected_rows, excluded_rows
 
 
 def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
@@ -1035,12 +1311,14 @@ def write_report(
     mode: str,
     video_delivery: str,
     estimated_bytes: int,
+    overflow_stats: dict[str, int | float | bool],
 ) -> None:
     counts = Counter(row["decision"] for row in rows)
     labels = {
         "select": "主选",
         "review": "备选_用户复筛",
         "memory": "纪念留档",
+        "not_selected": "未入选",
         "excluded": "排除",
     }
     lines = [
@@ -1054,14 +1332,22 @@ def write_report(
         ),
         f"- 源文件总数：{len({row['source_path'] for row in rows})}",
         f"- 判断记录总数：{len(rows)}",
+        f"- 唯一候选数：{overflow_stats['unique_candidate_count']}",
+        f"- 初筛备选数：{overflow_stats['initial_review_count']}",
+        f"- 备选比例：{float(overflow_stats['initial_review_ratio']):.2%}",
+        f"- 备选上限：{float(overflow_stats['review_ceiling']):.2%}",
+        f"- 溢出精简：{'已触发' if overflow_stats['triggered'] else '未触发'}",
+        f"- 精简后备选数：{overflow_stats['final_review_count']}",
+        f"- 精简后备选比例：{float(overflow_stats['final_review_ratio']):.2%}",
         f"- 主选记录：{counts['select']}",
         f"- 备选_用户复筛记录：{counts['review']}",
         f"- 纪念留档记录：{counts['memory']}",
+        f"- 未入选记录：{counts['not_selected']}",
         f"- 排除记录：{counts['excluded']}",
         "",
         (
             "原始素材未被移动、覆盖或删除；正式剪辑仍应使用原件。"
-            "排除项只记录在清单中。"
+            "未入选与排除项只记录在各自清单中。"
         ),
         "",
         "## 入选素材与推荐片段",
@@ -1069,9 +1355,10 @@ def write_report(
     ]
 
     if video_delivery == "clips":
-        lines[11:11] = [
+        lines.insert(
+            5,
             "- 裁切方式：约 720p H.264/AAC 轻量审看片段；不复制整条高码率原视频",
-        ]
+        )
 
     if included_rows:
         for row in included_rows:
@@ -1096,6 +1383,7 @@ def main() -> int:
     args = parse_args()
     try:
         rows = load_manifest(args.manifest)
+        overflow_stats = apply_review_overflow(rows, args.review_ceiling)
         video_delivery = resolve_video_delivery(args.mode, args.video_delivery)
         if args.output.exists():
             if not args.output.is_dir():
@@ -1105,7 +1393,7 @@ def main() -> int:
                     f"output directory is not empty; choose a new directory: {args.output}"
                 )
         clip_selection_rows_exist = video_delivery == "clips" and any(
-            row["decision"] != "excluded"
+            row["decision"] in CATEGORY_DIRS
             and is_video(row["source_path"])
             for row in rows
         )
@@ -1123,7 +1411,7 @@ def main() -> int:
             validate_clip_rows(rows, ffprobe)
         raw_converter = None
         if args.mode == "copy" and any(
-            row["decision"] != "excluded"
+            row["decision"] in CATEGORY_DIRS
             and is_raw_photo(row["source_path"])
             and not row["paired_jpeg_path"]
             for row in rows
@@ -1135,7 +1423,7 @@ def main() -> int:
             f"{estimated_bytes} bytes (~{human_size(estimated_bytes)}). "
             "This lightweight derivative set is not zero-storage."
         )
-        included_rows, excluded_rows = build_review_set(
+        included_rows, not_selected_rows, excluded_rows = build_review_set(
             rows,
             args.output.resolve(),
             args.mode,
@@ -1145,6 +1433,7 @@ def main() -> int:
             raw_converter,
         )
         write_csv(args.output / "筛选清单.csv", included_rows)
+        write_csv(args.output / "未入选清单.csv", not_selected_rows)
         write_csv(args.output / "排除清单.csv", excluded_rows)
         write_report(
             args.output / "筛选报告.md",
@@ -1153,6 +1442,7 @@ def main() -> int:
             args.mode,
             video_delivery,
             estimated_bytes,
+            overflow_stats,
         )
         failed_count = sum(
             row["generation_status"] == "failed" for row in included_rows
@@ -1170,7 +1460,8 @@ def main() -> int:
         return 3
     print(
         f"created review set at {args.output.resolve()} "
-        f"({len(included_rows)} included, {len(excluded_rows)} excluded)"
+        f"({len(included_rows)} included, {len(not_selected_rows)} not selected, "
+        f"{len(excluded_rows)} excluded)"
     )
     return 0
 

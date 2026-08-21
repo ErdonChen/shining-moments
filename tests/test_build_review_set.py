@@ -83,6 +83,7 @@ class BuildReviewSetTests(unittest.TestCase):
         ffmpeg=None,
         ffprobe=None,
         raw_converter=None,
+        review_ceiling=1.0,
     ):
         command = [
             sys.executable,
@@ -102,12 +103,41 @@ class BuildReviewSetTests(unittest.TestCase):
             command.extend(["--ffprobe", str(ffprobe)])
         if raw_converter is not None:
             command.extend(["--raw-converter", str(raw_converter)])
+        if review_ceiling is not None:
+            command.extend(["--review-ceiling", str(review_ceiling)])
         return subprocess.run(
             command,
             check=False,
             capture_output=True,
             text=True,
         )
+
+    def write_overflow_manifest(self, rows):
+        fieldnames = [
+            "source_path",
+            "decision",
+            "reason",
+            "candidate_id",
+            "similarity_group",
+            "relationship_progression",
+            "story_beat",
+            "representative_score",
+            "capture_style",
+            "selection_evidence",
+        ]
+        with self.manifest.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def make_candidate(self, name, content=None):
+        path = self.sources / name
+        path.write_bytes(content if content is not None else name.encode("utf-8"))
+        return path
+
+    def read_output_csv(self, name):
+        with (self.output / name).open(newline="", encoding="utf-8-sig") as handle:
+            return list(csv.DictReader(handle))
 
     def make_test_video(self, path, size):
         ffmpeg = shutil.which("ffmpeg")
@@ -1262,6 +1292,251 @@ class BuildReviewSetTests(unittest.TestCase):
             row = next(csv.DictReader(handle))
         self.assertEqual(row["generation_status"], "failed")
         self.assertIn("audio/video duration drift", row["generation_detail"])
+
+    def test_review_ceiling_leaves_natural_twelve_percent_review_set_unchanged(self):
+        rows = []
+        for index in range(25):
+            source = self.make_candidate(f"natural-{index:02d}.jpg")
+            rows.append(
+                {
+                    "source_path": source,
+                    "decision": "review" if index < 3 else "select",
+                    "reason": "distinct useful alternative" if index < 3 else "strongest frame",
+                    "candidate_id": f"natural-{index:02d}",
+                    "similarity_group": "",
+                    "relationship_progression": "",
+                    "story_beat": "",
+                    "representative_score": str(100 - index),
+                    "capture_style": "documentary",
+                    "selection_evidence": "distinct scene",
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=0.2)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        screening = self.read_output_csv("筛选清单.csv")
+        not_selected = self.read_output_csv("未入选清单.csv")
+        self.assertEqual(sum(row["decision"] == "review" for row in screening), 3)
+        self.assertEqual(not_selected, [])
+        report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
+        self.assertIn("唯一候选数：25", report)
+        self.assertIn("备选比例：12.00%", report)
+        self.assertIn("溢出精简：未触发", report)
+
+    def test_review_overflow_reduces_redundant_burst_below_default_ceiling(self):
+        rows = []
+        for index in range(20):
+            source = self.make_candidate(f"burst-{index:02d}.jpg")
+            is_review = index < 11
+            rows.append(
+                {
+                    "source_path": source,
+                    "decision": "review" if is_review else "select",
+                    "reason": "usable same-person burst" if is_review else "different selected scene",
+                    "candidate_id": f"burst-{index:02d}",
+                    "similarity_group": "same-person-burst" if is_review else "",
+                    "relationship_progression": "false",
+                    "story_beat": "same beat" if is_review else "",
+                    "representative_score": str(100 - index),
+                    "capture_style": "posed" if is_review else "documentary",
+                    "selection_evidence": "minor timing variation" if is_review else "distinct scene",
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=None)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        screening = self.read_output_csv("筛选清单.csv")
+        not_selected = self.read_output_csv("未入选清单.csv")
+        retained_review = [row for row in screening if row["decision"] == "review"]
+        self.assertLessEqual(len(retained_review), 4)
+        self.assertGreaterEqual(len(not_selected), 7)
+        self.assertTrue(all(row["decision"] == "not_selected" for row in not_selected))
+        report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
+        self.assertIn("备选比例：55.00%", report)
+        self.assertIn("溢出精简：已触发", report)
+
+    def test_posed_group_overflow_keeps_best_face_and_gaze_representative(self):
+        candidates = [
+            ("group-blink.jpg", 55, "closed eyes"),
+            ("group-blocked.jpg", 60, "face obstructed"),
+            ("group-flat.jpg", 70, "flat expression"),
+            ("group-looking-away.jpg", 75, "unsuitable gaze"),
+            ("group-open-natural.jpg", 99, "open eyes; visible faces; natural expression; camera-facing gaze"),
+        ]
+        rows = []
+        for name, score, evidence in candidates:
+            rows.append(
+                {
+                    "source_path": self.make_candidate(name),
+                    "decision": "review",
+                    "reason": "posed group burst",
+                    "candidate_id": name,
+                    "similarity_group": "posed-group-01",
+                    "relationship_progression": "false",
+                    "story_beat": "posed group",
+                    "representative_score": str(score),
+                    "capture_style": "posed",
+                    "selection_evidence": evidence,
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=0.2)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        retained = [
+            Path(row["source_path"]).name
+            for row in self.read_output_csv("筛选清单.csv")
+            if row["decision"] == "review"
+        ]
+        self.assertEqual(retained, ["group-open-natural.jpg"])
+
+    def test_candid_family_overflow_prefers_emotional_story_over_direct_gaze(self):
+        candidates = [
+            ("family-camera-gaze.jpg", 72, "direct gaze but weak interaction"),
+            ("family-embrace.jpg", 98, "strong relationship, emotion, and story beat"),
+            ("family-neutral.jpg", 50, "neutral expression"),
+            ("family-repeat.jpg", 45, "repeated interaction"),
+            ("family-obstructed.jpg", 40, "obstructed moment"),
+        ]
+        rows = []
+        for name, score, evidence in candidates:
+            rows.append(
+                {
+                    "source_path": self.make_candidate(name),
+                    "decision": "review",
+                    "reason": "candid family burst",
+                    "candidate_id": name,
+                    "similarity_group": "candid-family-01",
+                    "relationship_progression": "false",
+                    "story_beat": "same interaction",
+                    "representative_score": str(score),
+                    "capture_style": "candid",
+                    "selection_evidence": evidence,
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=0.2)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        retained = [
+            Path(row["source_path"]).name
+            for row in self.read_output_csv("筛选清单.csv")
+            if row["decision"] == "review"
+        ]
+        self.assertEqual(retained, ["family-embrace.jpg"])
+
+    def test_memory_cannot_absorb_overflow_and_not_selected_stays_distinct_from_excluded(self):
+        rows = []
+        decisions = ["select"] + ["review"] * 6 + ["memory"] * 2 + ["excluded"]
+        for index, decision in enumerate(decisions):
+            source = self.make_candidate(f"boundary-{index:02d}.jpg")
+            rows.append(
+                {
+                    "source_path": source,
+                    "decision": decision,
+                    "reason": "corrupt" if decision == "excluded" else "relationship" if decision == "memory" else "candidate",
+                    "candidate_id": f"boundary-{index:02d}",
+                    "similarity_group": "overflow-burst" if decision == "review" else "",
+                    "relationship_progression": "false",
+                    "story_beat": "same beat" if decision == "review" else "",
+                    "representative_score": str(100 - index),
+                    "capture_style": "documentary",
+                    "selection_evidence": "",
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=0.2)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        screening = self.read_output_csv("筛选清单.csv")
+        not_selected = self.read_output_csv("未入选清单.csv")
+        excluded = self.read_output_csv("排除清单.csv")
+        self.assertEqual(sum(row["decision"] == "memory" for row in screening), 2)
+        self.assertEqual(sum(row["decision"] == "review" for row in screening), 2)
+        self.assertEqual(len(not_selected), 4)
+        self.assertTrue(all(row["decision"] == "not_selected" for row in not_selected))
+        self.assertEqual(len(excluded), 1)
+        self.assertEqual(excluded[0]["decision"], "excluded")
+        for row in not_selected:
+            self.assertEqual(row["organized_path"], "")
+
+    def test_unique_candidate_denominator_collapses_raw_pairs_and_exact_duplicates(self):
+        raw = self.make_candidate("paired.dng", b"raw")
+        jpeg = self.make_candidate("paired.jpg", b"jpeg")
+        duplicate_a = self.make_candidate("duplicate-a.jpg", b"same bytes")
+        duplicate_b = self.make_candidate("duplicate-b.jpg", b"same bytes")
+        rows = []
+        for source, candidate_id in (
+            (raw, ""),
+            (jpeg, ""),
+            (duplicate_a, ""),
+            (duplicate_b, ""),
+        ):
+            rows.append(
+                {
+                    "source_path": source,
+                    "decision": "review",
+                    "reason": "dedup denominator check",
+                    "candidate_id": candidate_id,
+                    "similarity_group": "",
+                    "relationship_progression": "false",
+                    "story_beat": "",
+                    "representative_score": "80",
+                    "capture_style": "documentary",
+                    "selection_evidence": "",
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=0.5)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
+        self.assertIn("唯一候选数：2", report)
+        self.assertIn("备选比例：100.00%", report)
+        retained_review = [
+            row
+            for row in self.read_output_csv("筛选清单.csv")
+            if row["decision"] == "review"
+        ]
+        self.assertLessEqual(len({row["candidate_id"] or row["source_path"] for row in retained_review}), 1)
+
+    def test_user_supplied_review_ceiling_is_conditional_not_a_fill_target(self):
+        rows = []
+        for index in range(10):
+            source = self.make_candidate(f"custom-{index:02d}.jpg")
+            rows.append(
+                {
+                    "source_path": source,
+                    "decision": "review" if index < 3 else "select",
+                    "reason": "genuinely distinct alternative" if index < 3 else "selected",
+                    "candidate_id": f"custom-{index:02d}",
+                    "similarity_group": "",
+                    "relationship_progression": "false",
+                    "story_beat": "",
+                    "representative_score": str(100 - index),
+                    "capture_style": "documentary",
+                    "selection_evidence": "distinct scene",
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(review_ceiling=0.4)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        screening = self.read_output_csv("筛选清单.csv")
+        self.assertEqual(sum(row["decision"] == "review" for row in screening), 3)
+        self.assertEqual(self.read_output_csv("未入选清单.csv"), [])
+        report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
+        self.assertIn("备选上限：40.00%", report)
+        self.assertIn("溢出精简：未触发", report)
 
 
 if __name__ == "__main__":
