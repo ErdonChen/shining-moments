@@ -17,7 +17,8 @@ Shining Moments is a conservative “first filter”: it narrows the review set 
 - **Choose the material type before applying criteria:** Start with Mixed, Landscape/Travel, Architecture/Space, Documentary/Culture, Portrait, Family, Friends, Vlog/Event, or Custom. Each type uses targeted criteria instead of repeatedly applying one generic scoring template.
 - **Calibrate aesthetics with category-relevant references, not popularity:** Landscape and architecture can draw from 500px, YouTube, and ShotDeck; portrait and documentary work can draw from LensCulture and Magnum Photos; relationship footage and video storytelling can also draw from Vimeo Staff Picks. Instagram, Xiaohongshu, and X are trend signals only—likes never replace visual-language or narrative judgment. See the [full categorized reference list](#reference-sites).
 - **Organize photos and videos consistently, with a separate emotional channel:** The review set is divided into selects, alternatives for re-screening, and memory keeps. Family, friendship, and irreplaceable emotional moments can be preserved independently of purely technical quality.
-- **Choose the delivery method without touching originals:** Use symbolic links or copies; for video, keep timecodes only or export new candidate clips. Original files are never moved, overwritten, or deleted.
+- **Copy mode automatically stays lightweight instead of hauling large sources:** Link mode uses the least space. Copy mode is designed for human re-screening: it prefers a paired JPEG for RAW or generates a JPEG review copy, and exports only selected 4K/1080p intervals as about-720p review clips instead of copying whole high-bitrate videos. This can substantially reduce review-directory storage, but it is not zero-storage; the script estimates space first.
+- **Keep every derivative traceable and every original safe:** Photo, video, and lightweight-copy records preserve the original path, category, reason, and timecode mapping. Originals are never moved, overwritten, or deleted, and final editing should use the originals.
 
 A conservative first-pass curation Skill for personal photos and videos. It removes only confidently unusable media, then leaves selects, usable alternatives, duplicates, and relationship-rich moments for the user's final review.
 
@@ -36,7 +37,7 @@ Shining Moments is not Codex-only. Its core `SKILL.md`, category and selection r
 
 An ordinary chat model can still apply the written selection criteria and help reason about choices. Without local-file access, image/video analysis, and command-execution tools, however, it cannot automatically inventory media, create links or copies, or export video clips. For agents not listed above, do not assume automatic discovery; follow that product's official documentation or have it read `SKILL.md` directly.
 
-Runtime requirements: Python 3.10+; exporting new video candidate clips requires `ffmpeg` and `ffprobe`; link mode requires operating-system support for symbolic links.
+Runtime requirements: Python 3.10+; generating a RAW review JPEG requires ImageMagick (`magick`), RawTherapee CLI, darktable CLI, or macOS `sips` with support for that camera format (no converter is needed when a paired JPEG exists); exporting video review clips requires `ffmpeg` and `ffprobe`; link mode requires operating-system support for symbolic links. If a converter or video tool is missing or fails, the script preserves the original mapping, records `not-generated` / `failed`, and returns a partial-success status instead of pretending an asset was generated.
 
 ## The three opening choices
 
@@ -60,17 +61,39 @@ The default is Mixed. Relationship and memory value remain safety channels even 
 
 ### Step 2: Choose the organization mode
 
-- **Symbolic links (default):** use no additional media storage; best for large collections.
-- **Copies:** create portable review files; best for smaller collections.
+- **Symbolic links (default):** do not duplicate media content and use the least space; links, manifests, and reports still occupy a small amount.
+- **Copies:** create lightweight files for human re-screening. Directly reviewable JPEG/HEIC/PNG and similar photos keep the safe copy behavior; RAW becomes a JPEG review copy, and selected 4K/1080p intervals become about-720p review clips. Copy mode does not directly copy large RAW files or whole high-bitrate videos, but it still uses storage and shows an estimate before execution.
 
-Neither mode moves, overwrites, or deletes originals. A non-empty output directory is rejected to protect previous results.
+When Copies is selected, the Skill restates and confirms this lightweight-derivative and storage trade-off before writing. Neither mode moves, overwrites, or deletes originals. A non-empty output directory is rejected to protect previous results.
 
 ### Step 3: Choose video delivery
 
-- **Timecodes only (default):** keep one whole-source link or copy and record the recommended start and end times.
-- **Export separate new clips:** create new select or review clips for the user to screen directly. The original video is never trimmed or modified.
+- **Link mode defaults to timecodes only:** link the whole source and record recommended intervals; separate new clips remain an explicit option.
+- **Copy mode defaults to lightweight candidate clips:** timed included intervals in Select, Review, and Memory become new H.264/AAC MP4 files. Landscape output is capped at 1280×720 and portrait output at 720×1280; sources already at or below those bounds are never enlarged or stretched.
+- **Copy mode with explicit timecodes only:** preserve original-path and timecode mappings without copying the whole video.
 
-Clip export requires `ffmpeg` and `ffprobe`. Timecodes are validated against the source duration. Source audio and video streams are preserved to avoid generational loss, so rough cut boundaries may align to nearby keyframes.
+Clip export requires `ffmpeg` and `ffprobe`. Timecodes are validated against source duration. HDR/HLG, rotation metadata, or variable frame rate triggers a short sample check for color tagging, orientation, playability, and audio/video duration drift before the full candidate interval is exported. A failure never falls back to copying the whole source video.
+
+## Lightweight-copy manifest and example
+
+The input CSV requires at least `source_path,decision,reason`. Add `start_time,end_time` for video intervals and optional `paired_jpeg_path` for a known RAW+JPEG pair. When that field is empty, the script first looks for a same-directory, same-stem `.jpg`/`.jpeg`.
+
+```bash
+python3 scripts/build_review_set.py \
+  --manifest shortlist.csv \
+  --output review-set \
+  --mode copy \
+  --video-delivery auto
+```
+
+Example mappings from `shortlist.csv` to review derivatives:
+
+| High-quality original | Review derivative | Manifest record |
+|---|---|---|
+| `/media/IMG_1234.CR3` | `01_主选/IMG_1234__review.jpg` | `paired-jpeg` or `generated-jpeg`; records both the RAW original path and review JPEG path |
+| `/media/GH010042.MP4` at `00:01:12–00:01:24` | `01_主选/GH010042__00-01-12_to_00-01-24.mp4` | `video-review-clip`; records original path, timecodes, category, and reason, with 4K/1080p sources delivered at about 720p |
+
+`筛选清单.csv` also records `review_source_path`, `organized_path`, `review_asset_kind`, `generation_status`, and `generation_detail`. Asset kinds distinguish source links/ordinary copies, existing paired JPEGs, newly generated JPEGs, 720p candidate clips, timecode-only mappings, and ungenerated failures. Filename collisions receive stable `__2`, `__3`, ... suffixes instead of overwriting an output.
 
 ## First-pass rules
 

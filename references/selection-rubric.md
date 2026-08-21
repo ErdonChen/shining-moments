@@ -61,8 +61,20 @@ Group exact and near-duplicates. Recommend the strongest representative for `sel
 
 Add one manifest row per useful interval with precise `start_time`, `end_time`, and reason.
 
-- **Timecodes mode:** link or copy the whole original once. When intervals differ, place it only in the highest-priority included folder: `select`, then `review`, then `memory`. Do not export subclips.
-- **Clips mode:** create new, source-stream-copy files only for timed `select` and `review` intervals. Never modify the original. Do not export `memory` or `excluded` intervals as normal edit clips. If the same source also contains a memory interval, preserve that interval in the manifest without duplicating the whole source into the review set.
+- **Link + timecodes:** link the whole original once. When intervals differ, place the link only in the highest-priority included folder: `select`, then `review`, then `memory`. Keep every interval in the manifest.
+- **Copy + timecodes:** copy no whole video. Keep the original path, category, reason, and precise interval in the manifest and report.
+- **Clips:** create a new H.264/AAC MP4 review derivative for every timed `select`, `review`, or `memory` interval. A memory derivative stays in `03_纪念留档` and is not a normal-edit recommendation. Never create media for `excluded` rows.
+- Cap landscape derivatives at 1280×720 and portrait derivatives at 720×1280 while preserving aspect ratio. Never upscale a source already within those bounds.
+- Treat HDR/HLG, display rotation, and variable frame rate as technical-risk signals. Validate a short sample for color, orientation, playability, and audio/video duration drift before the full interval.
+- A derivative failure must be explicit: retain the source/timecode mapping, set the result to `not-generated` / `failed`, give an actionable `ffmpeg`/`ffprobe` hint, and never fall back to copying the full high-bitrate source.
+
+## Lightweight photo-copy policy
+
+- Keep the safe copy behavior for directly reviewable non-RAW photos such as JPEG, HEIC, and PNG.
+- For an included RAW, prefer `paired_jpeg_path` or a same-stem `.jpg`/`.jpeg`; record the RAW original and the JPEG used for review.
+- When no pair exists, generate a quality-85 JPEG review copy with an available converter. The converter should handle orientation and produce recognizable color suitable for human re-screening; spot-check generated results.
+- If a converter is unavailable or fails, never copy the large RAW as a disguised fallback and never claim success. Keep the original mapping, mark the review item ungenerated, and report the dependency or format-support problem.
+- Estimate review-set storage before writing. The estimate is approximate and not zero, but avoiding full RAW and whole high-bitrate video copies should substantially reduce review-directory size.
 
 ## Decision contract
 
