@@ -10,6 +10,10 @@ English | [简体中文](README.md)
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
 </p>
 
+## Name inspiration
+
+**Shining Moments** is inspired by the Japanese song title *煌めく瞬間に捕われて*, commonly rendered in Chinese as “捕捉闪耀的瞬间.” Here, “shining” means both aesthetically strong frames and technically imperfect but irreplaceable moments of family, friendship, and life.
+
 ## Core highlights
 
 Shining Moments is a conservative “first filter”: it narrows the review set while leaving the final choice to the user.
@@ -23,10 +27,6 @@ Shining Moments is a conservative “first filter”: it narrows the review set 
 - **Keep every derivative traceable and every original safe:** Photo, video, and lightweight-copy records preserve the original path, category, reason, and timecode mapping. Originals are never moved, overwritten, or deleted, and final editing should use the originals.
 
 A conservative first-pass curation Skill for personal photos and videos. It removes only confidently unusable media, then leaves selects, usable alternatives, duplicates, and relationship-rich moments for the user's final review.
-
-## Name inspiration
-
-**Shining Moments** is inspired by the Japanese song title *煌めく瞬間に捕われて*, commonly rendered in Chinese as “捕捉闪耀的瞬间.” Here, “shining” means both aesthetically strong frames and technically imperfect but irreplaceable moments of family, friendship, and life.
 
 ## Agent and model compatibility
 
