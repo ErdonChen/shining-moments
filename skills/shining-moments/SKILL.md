@@ -40,7 +40,7 @@ Before inventory or media judgment, follow these four opening steps in order:
 
 Never move, overwrite, or delete originals, and never reuse a non-empty output directory.
 
-Read [references/selection-rubric.md](references/selection-rubric.md). Before every cull, read and follow [references/style-reference-sources.md](references/style-reference-sources.md) and [references/reference-calibration-schema.md](references/reference-calibration-schema.md). Use `watch` for scene-aware video evidence. Use `video-use` only for later exact-frame or creative editing.
+Read [references/selection-rubric.md](references/selection-rubric.md). Before every cull, read and follow [references/style-reference-sources.md](references/style-reference-sources.md) and [references/reference-calibration-schema.md](references/reference-calibration-schema.md). Use the bundled `watch` Skill for scene-aware video evidence. Never invoke the bundled `video-use` Skill during culling; offer the `$shining-cut` handoff only after the review set is verified and the user explicitly chooses to continue into editing.
 
 ## Workflow
 

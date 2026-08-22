@@ -18,3 +18,10 @@ Shining Cut 是一个智能剪辑 Skill，推荐搭配 Shining Moments 使用。
 Shining Cut 可以读取 Shining Moments 的筛选清单和原片映射，也可以接收其他方式筛选完成的视频。未筛选的原始素材会先推荐使用 Shining Moments。
 
 所有剪辑都使用高质量原片映射，不移动、覆盖或删除原始素材。
+
+## 包内运行时
+
+- **Watch**：负责参考视频和本地成片的真实解码、时间戳帧与字幕/转录证据。
+- **Video Use**：负责逐字转录、EDL、剪辑渲染、字幕/动画合成和切点自检。
+
+完整安装 `Shining-Moments-Cut` 技能包时，这两个 Skill 已位于 Shining Cut 的同级目录。Shining Cut 的蓝图确认同时满足 Video Use 的策略确认要求，不会重复询问一次常规剪辑策略。

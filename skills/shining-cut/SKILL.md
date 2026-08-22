@@ -24,10 +24,11 @@ Turn already-screened footage into a reference-calibrated edit while keeping eve
 6. **Third confirmation — fine-cut decision.** Offer exactly: keep the rough cut, apply the recommended fine cut, or revise the fine-cut list once and then execute it. Default to retaining the rough cut's primary grade; offer secondary grading only as an explicit optional choice.
 7. **Fine cut, QA, and delivery.** Execute the confirmed choice, run secondary grading only when the user selected it, verify the actual output, and preserve the reference record, script, storyboard, timecodes, EDL, and original mapping beside the deliverable.
 
-## Use real downstream capabilities
+## Use the bundled downstream capabilities
 
-- Use the installed `watch` skill for public video URLs or local rendered files when it can provide decoded frames and timestamped evidence. Follow its own preflight. It does not authenticate to platform accounts or accept browser cookies.
-- Use the installed `video-use` skill for actual editing. Follow its runtime setup and production-correctness rules. The confirmed Shining Cut blueprint is the required plain-English strategy approval; do not introduce another ordinary strategy-confirmation round.
+- The complete bundle ships `watch` and `video-use` as sibling Skills at `../watch/` and `../video-use/`. Prefer their registered `$watch` and `$video-use` invocations. If the host does not register sibling Skills automatically, resolve each sibling from this `SKILL.md` location and read its own `SKILL.md`; never copy or invoke an entrypoint without its companion `scripts/` or `helpers/` directory.
+- Use `watch` for public video URLs or local rendered files when it can provide decoded frames and timestamped evidence. Follow its own preflight. It does not authenticate to platform accounts or accept browser cookies. Treat its output as observation evidence, not as an edit decision.
+- Use `video-use` for actual editing and rendered-output self-evaluation. Follow its runtime setup and production-correctness rules. Pass only screened original-media mappings and the approved Shining Cut blueprint into the edit. The blueprint is the required plain-English strategy approval; do not introduce another ordinary strategy-confirmation round.
 - For a YouTube or Bilibili enhancement that genuinely needs login, let the user authenticate in their own visible browser and inspect only media visible there. Never ask for, receive, store, export, or reuse a username, password, verification code, cookie, API key, or session secret. If a downstream transcript service needs an API key, ask the user to configure it outside Shining Cut or continue with evidence that does not require it.
 - If either required downstream skill or its runtime is unavailable, report the concrete preflight failure and pause. Do not fabricate a tool, playback result, transcript, reference observation, or edit.
 

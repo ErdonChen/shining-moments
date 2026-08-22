@@ -1,6 +1,6 @@
 # Rough cut, fine cut, and QA
 
-Use the installed `video-use` skill as the editing runtime and preserve its production-correctness rules. Resolve its directory and helpers from the Skill actually installed; do not assume a command, environment, or dependency is available until preflight succeeds.
+Use the bundled `video-use` Skill as the editing runtime and preserve its production-correctness rules. Prefer the registered Skill; otherwise resolve the sibling `../video-use/` directory from Shining Cut's installed location. Its `SKILL.md`, `helpers/`, and `pyproject.toml` must remain together. Do not assume a command, environment, or dependency is available until preflight succeeds.
 
 ## Rough cut
 

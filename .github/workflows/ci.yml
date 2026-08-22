@@ -19,18 +19,53 @@ jobs:
       - name: Run unit tests
         working-directory: skills/shining-moments
         run: python -m unittest discover -s tests -v
-      - name: Validate Skill metadata
+      - name: Compile bundled Python runtimes
+        run: python -m compileall -q skills/watch/scripts skills/video-use/helpers
+      - name: Validate Skill metadata and vendored runtime layout
         run: |
           python - <<'PY'
+          import json
           from pathlib import Path
 
           skills = {
               "shining-moments": Path("skills/shining-moments"),
               "shining-cut": Path("skills/shining-cut"),
+              "watch": Path("skills/watch"),
+              "video-use": Path("skills/video-use"),
           }
           for name, path in skills.items():
               skill = (path / "SKILL.md").read_text(encoding="utf-8")
-              agent = (path / "agents/openai.yaml").read_text(encoding="utf-8")
               assert f"\nname: {name}\n" in skill, f"Unexpected Skill name: {name}"
+
+          first_party = {
+              "shining-moments": skills["shining-moments"],
+              "shining-cut": skills["shining-cut"],
+          }
+          for name, path in first_party.items():
+              agent = (path / "agents/openai.yaml").read_text(encoding="utf-8")
               assert f"${name}" in agent, f"Missing default prompt invocation: {name}"
+
+          required_runtime_files = [
+              Path("skills/watch/scripts/watch.py"),
+              Path("skills/watch/scripts/setup.py"),
+              Path("skills/watch/SKILL.upstream.md"),
+              Path("skills/watch/LICENSE"),
+              Path("skills/video-use/helpers/render.py"),
+              Path("skills/video-use/helpers/timeline_view.py"),
+              Path("skills/video-use/pyproject.toml"),
+              Path("skills/video-use/skills/manim-video/SKILL.md"),
+              Path("skills/video-use/skills/manim-video/SKILL.upstream.md"),
+              Path("skills/video-use/LICENSE"),
+          ]
+          for path in required_runtime_files:
+              assert path.is_file(), f"Missing bundled runtime file: {path}"
+
+          provenance = json.loads(Path("UPSTREAM_SOURCES.json").read_text(encoding="utf-8"))
+          assert provenance["schema_version"] == 1
+          records = {record["skill"]: record for record in provenance["sources"]}
+          assert set(records) == {"watch", "video-use"}
+          for name, record in records.items():
+              assert len(record["commit"]) == 40
+              assert record["license"] == "MIT"
+              assert Path(record["vendored_path"]).resolve() == skills[name].resolve()
           PY

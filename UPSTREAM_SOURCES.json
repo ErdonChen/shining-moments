@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "skill": "watch",
+      "repository": "https://github.com/bradautomates/claude-video",
+      "commit": "83da59fa78c3eee9e20f515fe75c438bb5166efd",
+      "vendored_path": "skills/watch",
+      "source_path": "skills/watch",
+      "upstream_entrypoint": "skills/watch/SKILL.upstream.md",
+      "adaptation": "Moved unsupported top-level frontmatter fields under metadata for Codex validation; body and runtime scripts unchanged.",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 Bradley Bonanno"
+    },
+    {
+      "skill": "video-use",
+      "repository": "https://github.com/browser-use/video-use",
+      "commit": "92c2b34e44c205cbc2acae7f6ca7c1c219d5dd66",
+      "vendored_path": "skills/video-use",
+      "source_path": ".",
+      "upstream_entrypoint": "skills/video-use/SKILL.md",
+      "adaptation": "Added bundle-aware setup and installer guidance, removed one trailing space, and normalized nested manim-video frontmatter for Codex with its original preserved as SKILL.upstream.md.",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 Browser Use"
+    }
+  ]
+}

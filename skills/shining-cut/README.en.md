@@ -18,3 +18,10 @@ Shining Cut is an intelligent video-editing Skill, recommended for use with Shin
 Shining Cut can read Shining Moments manifests and original-media mappings, or accept footage screened through another workflow. For unscreened source media, it recommends using Shining Moments first.
 
 Every edit maps back to high-quality originals. Original media is never moved, overwritten, or deleted.
+
+## Bundled runtimes
+
+- **Watch** provides actual decoding, timestamped frames, and caption/transcript evidence for reference videos and local renders.
+- **Video Use** provides word-level transcription, EDL execution, rendering, subtitle/animation compositing, and cut-boundary self-evaluation.
+
+When the complete `Shining-Moments-Cut` bundle is installed, both Skills sit next to Shining Cut. Shining Cut's approved blueprint also satisfies Video Use's strategy-confirmation requirement, so the workflow does not ask for a duplicate routine edit-strategy approval.

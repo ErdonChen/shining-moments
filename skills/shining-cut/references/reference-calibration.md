@@ -21,7 +21,7 @@ If the user supplied a reference URL, treat it as the intended main reference. I
 
 A reference counts only when video actually decodes or visible playback time advances in this run.
 
-- For a public URL or local file, use the installed `watch` skill and follow its preflight and evidence limits.
+- For a public URL or local file, use the bundled `watch` Skill and follow its preflight and evidence limits. Prefer the registered Skill; otherwise resolve the sibling `../watch/` directory from Shining Cut's installed location and keep its `SKILL.md` with `scripts/`.
 - For an enhanced source that requires login, the user authenticates in their own visible browser. Inspect only visible playback in that same user-controlled session; never extract or pass credentials, verification codes, cookies, API keys, or other authentication secrets to `watch` or another process.
 - Sample the opening, middle, ending, and clearly distinct visual beats. Increase coverage when pacing, transitions, narrative, dialogue, music, or sound design materially affects the analysis.
 - A thumbnail, poster frame, search result, page shell, title, transcript alone, or remembered platform style is not playback evidence.
