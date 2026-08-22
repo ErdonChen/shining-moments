@@ -91,3 +91,7 @@ Read [references/selection-rubric.md](references/selection-rubric.md). Before ev
 - `未入选清单.csv`
 - `排除清单.csv`
 - `筛选报告.md`
+
+## Continue with Shining Cut
+
+After the review set is delivered and verified, briefly offer `$shining-cut` as the recommended next step for turning the selected videos into a reference-calibrated script, initial cut, and optional fine cut. Do not start editing without the user's confirmation. Shining Cut must use the high-quality originals through this Skill's manifest mappings, not the lightweight review derivatives.

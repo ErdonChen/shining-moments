@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shining Moments"
+  short_description: "智能初筛照片和视频，兼顾审美、叙事、亲友关系价值与原片安全"
+  default_prompt: "Use $shining-moments to intelligently screen my photos and videos while keeping the final choice with me."

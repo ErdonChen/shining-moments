@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shining Cut"
+  short_description: "参考校准驱动的视频脚本、时间码分镜、初剪、细剪与质量验证工作流"
+  default_prompt: "Use $shining-cut to turn my screened footage into a reference-calibrated script, initial cut, fine cut, and verified final video."

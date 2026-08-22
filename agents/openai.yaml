@@ -1,4 +1,0 @@
-interface:
-  display_name: "Shining Moments"
-  short_description: "初筛照片和视频，兼顾审美、叙事与亲友关系价值"
-  default_prompt: "Use $shining-moments to make a conservative first-pass selection of my photos and videos."
