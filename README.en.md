@@ -41,48 +41,18 @@ An ordinary chat model can still apply the written selection criteria and help r
 
 Runtime requirements: Python 3.10+; generating a RAW review JPEG requires ImageMagick (`magick`), RawTherapee CLI, darktable CLI, or macOS `sips` with support for that camera format (no converter is needed when a paired JPEG exists); exporting video review clips requires `ffmpeg` and `ffprobe`; link mode requires operating-system support for symbolic links. If a converter or video tool is missing or fails, the script preserves the original mapping, records `not-generated` / `failed`, and returns a partial-success status instead of pretending an asset was generated.
 
-## The four opening steps
+## Four-step quick flow
 
-First confirm that the originals are read-only, then complete these four steps in order. Step 4 confirms the delivery method and a new output directory.
+First confirm that the originals are read-only. The Skill then gathers four simple choices:
 
-### Step 1: Choose the material type
+| Step | User choice | What the Skill does |
+|---|---|---|
+| **1. Topic** | Mixed, Landscape/Travel, Architecture/Space, Documentary/Culture, Portrait, Family, Friends, Vlog/Event, or Custom | Applies the matching aesthetic, narrative, and relationship criteria; defaults to Mixed. |
+| **2. Media kind** | Photos, Videos, or Photos + Videos | Calibrates and screens photos and videos separately. |
+| **3. Reference calibration** | Use automatic sources, with one optional manual enhancement | Automatic photo sources are Commons, Flickr, and Google Images; automatic video sources are Commons and Google Videos. If needed, add one human-verification, user-login, or custom-URL source. |
+| **4. Delivery** | Symbolic links (default) or lightweight copies | Links use the least space. Lightweight copies generate/reuse JPEGs for RAW and export only selected video intervals. Neither mode moves, overwrites, or deletes originals. |
 
-| Option | Main emphasis |
-|---|---|
-| Mixed | Route each photo or video interval to its most relevant category |
-| Landscape and travel | Light, weather, depth, sense of place, and travel progression |
-| Architecture and space | Geometry, scale, material, circulation, and human use of space |
-| Documentary and culture | Authentic action, environmental context, cultural detail, and dignity |
-| Portrait | Expression, gaze, gesture, identity, skin tone, and background control |
-| Family | Relationship clarity, emotional truth, family rhythm, and irreplaceability |
-| Friends | Shared action, mutual reaction, chemistry, support, and group relationships |
-| Vlog and events | Narrative role, progression, shot variety, sound, and editability |
-| Custom | Build criteria from the deliverable, audience, must-keeps, and references |
-
-The default is Mixed. Relationship and memory value remain safety channels even when another category is selected.
-
-### Step 2: Choose media kinds
-
-Choose Photos, Videos, or Photos + Videos. Photo and video references are calibrated independently: images must actually be visible, videos must actually play, and each requested media kind needs at least two distinct visible sources.
-
-### Step 3: Run automatic calibration and optionally add one manual source
-
-The fixed no-login automatic pool always runs, without asking the user to check sites individually. Photos use Wikimedia Commons Images, public Flickr content, and Google Images. Videos use Wikimedia Commons Videos and Google Videos. A Google Images enlarged preview must include its origin URL; thumbnails do not count. Google Images and Google Videos each count as one source regardless of the origin domains shown in results.
-
-After the automatic pass, the Skill asks whether the user wants one manual enhancement:
-
-- **Human-verification enhancement:** recommend one of Unsplash (photos) or Pexels (photos/videos) by topic and media kind. The user completes the challenge in their own visible browser. One Pexels challenge can be reused for photos and videos; do not request a second challenge.
-- **User-login enhancement:** recommend one of Xiaohongshu, Instagram, YouTube, or Bilibili by topic, language, and media kind. The user chooses the site and logs in themselves in their own visible browser.
-- **Another URL:** the user may enter another reference URL. Open it first; use public visible media directly, ask the user to complete a challenge if one appears, and ask them to log in only if the site actually requires it.
-
-The user can accept the recommendation, choose a different listed source, or enter a custom URL. If they decline or the enhancement fails, automatic calibration still continues. Visible automatic and manual evidence may combine to satisfy the two-source gate.
-
-### Step 4: Choose links or lightweight copies
-
-- **Symbolic links (default):** do not duplicate media content, use the least space, and preserve precise video timecodes.
-- **Lightweight copies:** safely copy ordinary photos, reuse or generate JPEG review derivatives for RAW, and export included video intervals as about-720p H.264/AAC review clips. Never copy whole high-bitrate videos. Copy mode is not zero-storage and shows an estimate before writing.
-
-This step also confirms a new, separate output directory. Neither mode moves, overwrites, or deletes originals, and a non-empty output directory is rejected. If the user explicitly asks, copy mode can keep timecode mappings without exporting clips. Clip export requires `ffmpeg` and `ffprobe`; HDR/HLG, rotation metadata, or variable frame rate triggers a short sample check, and a failure never falls back to copying the whole source video.
+Manual enhancement uses at most one source per run: Unsplash or Pexels (including Pexels Videos) for human verification; Xiaohongshu, Instagram, YouTube, or Bilibili for user login; or another reference URL supplied by the user. Verification and login happen only in the user's own visible browser. One Pexels challenge can be reused for both photos and videos. If the user declines or the enhancement fails, automatic calibration still continues. Each requested media kind needs at least two distinct sources actually visible or playable in this run; automatic and manual evidence may be combined.
 
 ## Lightweight-copy manifest and example
 
