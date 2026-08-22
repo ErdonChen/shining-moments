@@ -32,6 +32,12 @@ Turn already-screened footage into a reference-calibrated edit while keeping eve
 - For a YouTube or Bilibili enhancement that genuinely needs login, let the user authenticate in their own visible browser and inspect only media visible there. Never ask for, receive, store, export, or reuse a username, password, verification code, cookie, API key, or session secret. If a downstream transcript service needs an API key, ask the user to configure it outside Shining Cut or continue with evidence that does not require it.
 - If either required downstream skill or its runtime is unavailable, report the concrete preflight failure and pause. Do not fabricate a tool, playback result, transcript, reference observation, or edit.
 
+## Apply editorial and grading tendencies
+
+- For action-camera and drone footage, deprioritize or omit shots with abrupt direction changes, whip turns, sudden pans, or other jarring camera movement. Use such a shot only when the movement has clear narrative, spatial, rhythmic, or emotional meaning.
+- For any explicitly included photo or video source that is flat Log or RAW material, the primary grade must normalize exposure, contrast, white balance, and color before the rough cut is delivered. After verifying the source profile and LUT compatibility, use an appropriate style LUT when helpful, such as a landscape LUT or a skin-tone-focused portrait LUT. Never hand the user a gray-looking or obviously misexposed rough cut.
+- When the user requests secondary grading, use the approved reference sample and the project's subject to pursue a bolder, coherent style instead of falling back to the cautious primary-grade look. For example, Japanese travel footage can favor a Japanese-inspired palette, while family or kinship footage can favor warm, intimate tones; preserve usable exposure and natural-looking key skin tones while making the requested style clearly visible.
+
 ## Preserve sources and evidence
 
 - Default to video only. Ignore photos in mixed folders unless the user explicitly asks to add them.
