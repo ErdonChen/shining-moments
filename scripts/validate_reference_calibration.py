@@ -17,7 +17,7 @@ UNAVAILABLE_NOTICE = (
     "只有用户明确同意后才能继续，否则暂停筛选。"
 )
 PARTIAL_NOTICE = (
-    "当前仅有一个自动公开来源返回了实际可见样本，未达到至少两个来源的自动视觉校准门槛。"
+    "当前至少一种素材类型只有一个实际可见参考来源，未达到两个独立来源的视觉校准门槛。"
     "必须询问用户是否愿意在明确记录此限制后改用静态审美知识继续；"
     "只有用户明确同意后才能继续，否则暂停筛选。"
 )
@@ -35,9 +35,11 @@ MATERIAL_TYPES = {
 }
 MEDIA_KINDS = {"photo", "video"}
 SOURCE_ROLES = {"editorial", "trend", "author-discovery"}
-ACCESS_MODES = {"automatic", "manual-enhancement"}
-AUTOMATIC_STATES = {"ready", "partial", "unavailable"}
+CATALOG_ACCESS_MODES = {"automatic", "manual-challenge", "manual-login"}
+ACCESS_MODES = CATALOG_ACCESS_MODES | {"manual-custom"}
+MANUAL_MODES = {"none", "challenge", "login", "custom"}
 MANUAL_STATES = {"completed", "declined", "cannot-use"}
+AUTOMATIC_STATES = {"ready", "partial", "unavailable"}
 PATTERN_DIMENSIONS = {
     "composition",
     "light",
@@ -55,10 +57,12 @@ PATTERN_DIMENSIONS = {
     "cover_frame",
 }
 SENSITIVE_KEY_PARTS = {
+    "api",
     "credential",
     "credentials",
     "cookie",
     "cookies",
+    "key",
     "mfa",
     "otp",
     "passwd",
@@ -74,8 +78,8 @@ SENSITIVE_KEY_PARTS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate automatic public-reference samples, optional user-managed "
-            "manual enhancement, per-source limitations, and fallback readiness."
+            "Validate fixed automatic reference sources, optional user-managed "
+            "challenge/login/custom enhancement, and per-media readiness."
         )
     )
     parser.add_argument("--input", required=True, type=Path)
@@ -101,11 +105,16 @@ def require_text(value: Any, label: str) -> str:
     return value.strip()
 
 
-def require_text_list(value: Any, label: str, *, allow_empty: bool = False) -> list[str]:
+def require_text_list(
+    value: Any, label: str, *, allow_empty: bool = False
+) -> list[str]:
     if not isinstance(value, list) or (not value and not allow_empty):
         qualifier = "a list" if allow_empty else "a non-empty list"
         raise ValueError(f"{label} must be {qualifier}")
-    return [require_text(item, f"{label} item") for item in value]
+    result = [require_text(item, f"{label} item") for item in value]
+    if len(result) != len(set(result)):
+        raise ValueError(f"{label} must not contain duplicates")
+    return result
 
 
 def require_timestamp(value: Any, label: str) -> str:
@@ -117,7 +126,9 @@ def require_timestamp(value: Any, label: str) -> str:
     return timestamp
 
 
-def require_urls(value: Any, label: str, *, allow_empty: bool = False) -> list[str]:
+def require_urls(
+    value: Any, label: str, *, allow_empty: bool = False
+) -> list[str]:
     urls = require_text_list(value, label, allow_empty=allow_empty)
     if any(not url.startswith(("https://", "http://")) for url in urls):
         raise ValueError(f"{label} must contain HTTP(S) URLs")
@@ -125,14 +136,13 @@ def require_urls(value: Any, label: str, *, allow_empty: bool = False) -> list[s
 
 
 def require_exact_id_set(value: Any, expected: set[str], label: str) -> set[str]:
-    actual_list = require_text_list(value, label, allow_empty=True)
-    if len(actual_list) != len(set(actual_list)):
-        raise ValueError(f"{label} must not contain duplicates")
-    actual = set(actual_list)
+    actual = set(require_text_list(value, label, allow_empty=True))
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
-        raise ValueError(f"{label} does not match routed sources; missing={missing}, extra={extra}")
+        raise ValueError(
+            f"{label} does not match routed sources; missing={missing}, extra={extra}"
+        )
     return actual
 
 
@@ -149,8 +159,7 @@ def reject_sensitive_fields(value: Any, label: str = "payload") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
             normalized = str(key).lower().replace("-", "_")
-            parts = set(normalized.split("_"))
-            if parts & SENSITIVE_KEY_PARTS:
+            if set(normalized.split("_")) & SENSITIVE_KEY_PARTS:
                 raise ValueError(
                     f"{label} contains prohibited authentication-secret field: {key}"
                 )
@@ -160,99 +169,110 @@ def reject_sensitive_fields(value: Any, label: str = "payload") -> None:
             reject_sensitive_fields(child, f"{label}[{index}]")
 
 
+def validate_source_definition(
+    source: dict[str, Any], label: str, *, custom: bool = False
+) -> dict[str, Any]:
+    source_id = require_text(source.get("id"), f"{label}.id")
+    require_text(source.get("name"), f"{label}.name")
+    require_urls([source.get("url")], f"{label}.url")
+    access_mode = require_text(source.get("access_mode"), f"{label}.access_mode")
+    allowed_modes = {"manual-custom"} if custom else CATALOG_ACCESS_MODES
+    if access_mode not in allowed_modes:
+        raise ValueError(f"unsupported source access_mode: {access_mode}")
+    media_kinds = set(require_text_list(source.get("media_kinds"), f"{label}.media_kinds"))
+    if media_kinds - MEDIA_KINDS:
+        raise ValueError(f"unsupported source media kinds: {sorted(media_kinds - MEDIA_KINDS)}")
+    roles = set(require_text_list(source.get("roles"), f"{label}.roles"))
+    if roles - SOURCE_ROLES:
+        raise ValueError(f"unsupported source roles: {sorted(roles - SOURCE_ROLES)}")
+    if not custom:
+        applicable = set(
+            require_text_list(source.get("applicable_for"), f"{label}.applicable_for")
+        )
+        if applicable - (MATERIAL_TYPES - {"mixed", "custom"}):
+            raise ValueError(
+                f"unsupported applicable material types: {sorted(applicable)}"
+            )
+    media_urls = source.get("media_urls")
+    if media_urls is not None:
+        media_url_map = require_mapping(media_urls, f"{label}.media_urls")
+        if set(media_url_map) - media_kinds:
+            raise ValueError(f"{label}.media_urls contains unsupported media kinds")
+        for media_kind, url in media_url_map.items():
+            require_urls([url], f"{label}.media_urls.{media_kind}")
+    return source
+
+
 def load_catalog(path: Path) -> dict[str, dict[str, Any]]:
     payload = load_json(path, "source catalog")
-    if payload.get("schema_version") != 2:
-        raise ValueError("source catalog schema_version must be 2")
-    sources = payload.get("sources")
-    if not isinstance(sources, list) or not sources:
+    if payload.get("schema_version") != 3:
+        raise ValueError("source catalog schema_version must be 3")
+    values = payload.get("sources")
+    if not isinstance(values, list) or not values:
         raise ValueError("source catalog sources must be a non-empty list")
     catalog: dict[str, dict[str, Any]] = {}
-    for index, value in enumerate(sources):
-        source = require_mapping(value, f"source catalog item {index}")
-        source_id = require_text(source.get("id"), f"source catalog item {index} id")
+    for index, value in enumerate(values):
+        source = validate_source_definition(
+            require_mapping(value, f"source catalog item {index}"),
+            f"source catalog item {index}",
+        )
+        source_id = source["id"]
         if source_id == "x" or source.get("name") == "X":
             raise ValueError("X must not appear in the source catalog")
         if source_id in catalog:
             raise ValueError(f"source catalog contains duplicate id: {source_id}")
-        require_text(source.get("name"), f"source catalog item {index} name")
-        require_urls([source.get("url")], f"source catalog item {index} url")
-        access_mode = require_text(
-            source.get("access_mode"), f"source catalog item {index} access_mode"
-        )
-        if access_mode not in ACCESS_MODES:
-            raise ValueError(f"unsupported source access_mode: {access_mode}")
-        media_kinds = set(
-            require_text_list(
-                source.get("media_kinds"), f"source catalog item {index} media_kinds"
-            )
-        )
-        if media_kinds - MEDIA_KINDS:
-            raise ValueError(f"unsupported source media kinds: {sorted(media_kinds - MEDIA_KINDS)}")
-        roles = set(
-            require_text_list(source.get("roles"), f"source catalog item {index} roles")
-        )
-        if roles - SOURCE_ROLES:
-            raise ValueError(f"unsupported source roles: {sorted(roles - SOURCE_ROLES)}")
-        applicable = set(
-            require_text_list(
-                source.get("applicable_for"),
-                f"source catalog item {index} applicable_for",
-            )
-        )
-        if applicable - (MATERIAL_TYPES - {"mixed", "custom"}):
-            raise ValueError(f"unsupported applicable material types: {sorted(applicable)}")
-        defaults = set(
-            require_text_list(
-                source.get("default_for", []),
-                f"source catalog item {index} default_for",
-                allow_empty=True,
-            )
-        )
-        if defaults - applicable:
-            raise ValueError(f"{source_id} default_for must be a subset of applicable_for")
-        if access_mode == "manual-enhancement" and defaults:
-            raise ValueError(f"manual source {source_id} cannot be an automatic default")
         catalog[source_id] = source
     return catalog
+
+
+def is_applicable(
+    source: dict[str, Any], material_type: str, media_kinds: set[str]
+) -> bool:
+    return bool(set(source.get("media_kinds", [])) & media_kinds) and (
+        material_type in {"mixed", "custom"}
+        or material_type in source.get("applicable_for", [])
+    )
 
 
 def routed_source_ids(
     catalog: dict[str, dict[str, Any]],
     material_type: str,
     media_kinds: set[str],
-    access_mode: str,
+    access_modes: set[str],
 ) -> set[str]:
-    routed: set[str] = set()
-    for source_id, source in catalog.items():
-        if source.get("access_mode") != access_mode:
-            continue
-        if not (set(source.get("media_kinds", [])) & media_kinds):
-            continue
-        if material_type in {"mixed", "custom"} or material_type in source.get(
-            "applicable_for", []
-        ):
-            routed.add(source_id)
-    return routed
-
-
-def default_automatic_source_ids(
-    catalog: dict[str, dict[str, Any]],
-    material_type: str,
-    media_kinds: set[str],
-) -> set[str]:
-    applicable = routed_source_ids(catalog, material_type, media_kinds, "automatic")
-    if material_type in {"mixed", "custom"}:
-        return applicable
     return {
         source_id
-        for source_id in applicable
-        if material_type in catalog[source_id].get("default_for", [])
+        for source_id, source in catalog.items()
+        if source.get("access_mode") in access_modes
+        and is_applicable(source, material_type, media_kinds)
     }
 
 
+def validate_custom_sources(
+    values: Any, requested_media: set[str]
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(values, list):
+        raise ValueError("manual_enhancement.custom_sources must be a list")
+    custom: dict[str, dict[str, Any]] = {}
+    for index, value in enumerate(values):
+        source = validate_source_definition(
+            require_mapping(value, f"manual_enhancement.custom_sources[{index}]"),
+            f"manual_enhancement.custom_sources[{index}]",
+            custom=True,
+        )
+        source_id = source["id"]
+        if not source_id.startswith("custom-"):
+            raise ValueError("custom source ids must start with custom-")
+        if source_id in custom:
+            raise ValueError(f"duplicate custom source id: {source_id}")
+        if not set(source["media_kinds"]) <= requested_media:
+            raise ValueError("custom source media kinds must be requested for this run")
+        custom[source_id] = source
+    return custom
+
+
 def index_source_records(
-    payload: dict[str, Any], catalog: dict[str, dict[str, Any]]
+    payload: dict[str, Any], expected_ids: set[str]
 ) -> dict[str, dict[str, Any]]:
     values = payload.get("sources")
     if not isinstance(values, list):
@@ -261,12 +281,12 @@ def index_source_records(
     for index, value in enumerate(values):
         record = require_mapping(value, f"sources[{index}]")
         source_id = require_text(record.get("source_id"), f"sources[{index}].source_id")
-        if source_id not in catalog:
+        if source_id not in expected_ids:
             raise ValueError(f"unknown source_id: {source_id}")
         if source_id in records:
             raise ValueError(f"duplicate source record: {source_id}")
         records[source_id] = record
-    missing = sorted(set(catalog) - set(records))
+    missing = sorted(expected_ids - set(records))
     if missing:
         raise ValueError("missing source records: " + ", ".join(missing))
     return records
@@ -275,40 +295,61 @@ def index_source_records(
 def validate_visible_samples(
     record: dict[str, Any],
     source_id: str,
-    catalog_source: dict[str, Any],
-    media_kinds: set[str],
-) -> None:
-    samples = record.get("visible_samples")
-    if not isinstance(samples, list) or not samples:
+    source: dict[str, Any],
+    requested_media: set[str],
+) -> set[str]:
+    values = record.get("visible_samples")
+    if not isinstance(values, list) or not values:
         raise ValueError(
             f"{source_id}.visible_samples must contain actual visible image/video samples"
         )
-    allowed_kinds = set(catalog_source.get("media_kinds", [])) & media_kinds
-    for index, value in enumerate(samples):
+    allowed_kinds = set(source["media_kinds"]) & requested_media
+    visible_kinds: set[str] = set()
+    for index, value in enumerate(values):
         sample = require_mapping(value, f"{source_id}.visible_samples[{index}]")
         require_urls([sample.get("url")], f"{source_id}.visible_samples[{index}].url")
         media_kind = require_text(
             sample.get("media_kind"), f"{source_id}.visible_samples[{index}].media_kind"
         )
         if media_kind not in allowed_kinds:
-            raise ValueError(f"{source_id} visible sample has unsuitable media_kind: {media_kind}")
-        expected_visibility = "full-image" if media_kind == "photo" else "video-playback"
-        if sample.get("visibility") != expected_visibility:
             raise ValueError(
-                f"{source_id} {media_kind} sample visibility must be {expected_visibility}; "
-                "page-only, text-only, thumbnails, and search snippets do not count"
+                f"{source_id} visible sample has unsuitable media_kind: {media_kind}"
+            )
+        visibility = sample.get("visibility")
+        if media_kind == "video":
+            if visibility != "video-playback":
+                raise ValueError(
+                    f"{source_id} video sample visibility must be video-playback"
+                )
+        elif source_id == "google-images":
+            if visibility not in {"enlarged-preview", "full-image"}:
+                raise ValueError(
+                    "google-images photo evidence must be an enlarged-preview "
+                    "or full-image; thumbnails do not count"
+                )
+            require_urls(
+                [sample.get("origin_url")],
+                f"{source_id}.visible_samples[{index}].origin_url",
+            )
+        elif visibility != "full-image":
+            raise ValueError(
+                f"{source_id} photo sample visibility must be full-image; "
+                "page-only and thumbnails do not count"
             )
         require_text(
-            sample.get("observation"), f"{source_id}.visible_samples[{index}].observation"
+            sample.get("observation"),
+            f"{source_id}.visible_samples[{index}].observation",
         )
+        visible_kinds.add(media_kind)
+    return visible_kinds
 
 
 def validate_observed_source(
     record: dict[str, Any],
     source_id: str,
-    catalog_source: dict[str, Any],
-    media_kinds: set[str],
-) -> None:
+    source: dict[str, Any],
+    requested_media: set[str],
+) -> set[str]:
     if record.get("calibration_use") != "used":
         raise ValueError(f"accessed source {source_id} must set calibration_use used")
     require_timestamp(record.get("accessed_at"), f"{source_id}.accessed_at")
@@ -316,11 +357,12 @@ def validate_observed_source(
     require_text(record.get("sample_scope"), f"{source_id}.sample_scope")
     require_text(record.get("discovery_mechanism"), f"{source_id}.discovery_mechanism")
     require_text(record.get("access_limitations"), f"{source_id}.access_limitations")
-    validate_visible_samples(record, source_id, catalog_source, media_kinds)
+    visible_kinds = validate_visible_samples(
+        record, source_id, source, requested_media
+    )
     roles = set(require_text_list(record.get("roles"), f"{source_id}.roles"))
-    unsupported = roles - set(catalog_source.get("roles", []))
-    if unsupported:
-        raise ValueError(f"{source_id} roles must match catalog roles; unsupported: {sorted(unsupported)}")
+    if roles - set(source["roles"]):
+        raise ValueError(f"{source_id}.roles must match catalog/custom roles")
     require_text_list(record.get("keywords"), f"{source_id}.keywords")
     patterns = require_mapping(record.get("patterns"), f"{source_id}.patterns")
     if not patterns:
@@ -329,6 +371,7 @@ def validate_observed_source(
         if dimension not in PATTERN_DIMENSIONS:
             raise ValueError(f"{source_id}.patterns has unknown dimension: {dimension}")
         require_text(observation, f"{source_id}.patterns.{dimension}")
+    return visible_kinds
 
 
 def validate_failed_source(record: dict[str, Any], source_id: str) -> None:
@@ -339,31 +382,33 @@ def validate_failed_source(record: dict[str, Any], source_id: str) -> None:
     require_urls(record.get("attempted_urls"), f"{source_id}.attempted_urls")
     require_text(record.get("access_limitations"), f"{source_id}.access_limitations")
     require_text(record.get("failure_reason"), f"{source_id}.failure_reason")
-    samples = record.get("visible_samples")
-    if samples != []:
-        raise ValueError(f"failed source {source_id} must have an empty visible_samples list")
+    if record.get("visible_samples") != []:
+        raise ValueError(f"failed source {source_id} must have empty visible_samples")
 
 
 def validate_source_records(
     records: dict[str, dict[str, Any]],
     catalog: dict[str, dict[str, Any]],
-    media_kinds: set[str],
-    automatic_selected: set[str],
-    manual_selected: set[str],
-) -> tuple[set[str], set[str], set[str], set[str]]:
-    automatic_success: set[str] = set()
-    automatic_failed: set[str] = set()
-    manual_success: set[str] = set()
+    requested_media: set[str],
+    selected_automatic: set[str],
+    selected_manual: set[str],
+) -> tuple[
+    dict[str, set[str]],
+    dict[str, set[str]],
+    set[str],
+    set[str],
+]:
+    automatic_success = {media_kind: set() for media_kind in requested_media}
+    manual_success = {media_kind: set() for media_kind in requested_media}
+    all_success: set[str] = set()
     manual_failed: set[str] = set()
+    selected = selected_automatic | selected_manual
     for source_id, record in records.items():
         source = catalog[source_id]
         access_mode = source["access_mode"]
         if record.get("access_mode") != access_mode:
-            raise ValueError(f"{source_id}.access_mode must match the catalog")
-        selected = source_id in (
-            automatic_selected if access_mode == "automatic" else manual_selected
-        )
-        if not selected:
+            raise ValueError(f"{source_id}.access_mode must match its source definition")
+        if source_id not in selected:
             if record.get("selection_status") != "not-selected":
                 raise ValueError(f"unselected source {source_id} must be not-selected")
             if record.get("access_status") != "not-accessed":
@@ -375,29 +420,41 @@ def validate_source_records(
         if record.get("selection_status") != "selected":
             raise ValueError(f"selected source {source_id} must set selection_status selected")
         status = require_text(record.get("access_status"), f"{source_id}.access_status")
-        if status == "accessed":
-            validate_observed_source(record, source_id, source, media_kinds)
-            if access_mode == "automatic":
-                if record.get("authentication_used") is not False:
-                    raise ValueError(f"automatic source {source_id} must require no login")
-                automatic_success.add(source_id)
-            else:
-                if record.get("user_visible_browser") is not True:
-                    raise ValueError(
-                        f"manual source {source_id} must be observed in the user's visible browser"
-                    )
-                manual_success.add(source_id)
-        elif status == "failed":
+        if status == "failed":
             validate_failed_source(record, source_id)
             if access_mode == "automatic":
                 if record.get("authentication_used") is not False:
-                    raise ValueError(f"automatic source {source_id} must not use authentication")
-                automatic_failed.add(source_id)
+                    raise ValueError(
+                        f"automatic source {source_id} must not use authentication"
+                    )
             else:
+                if record.get("user_visible_browser") is not True:
+                    raise ValueError(
+                        f"manual source {source_id} must use the user's visible browser"
+                    )
                 manual_failed.add(source_id)
-        else:
+            continue
+        if status != "accessed":
             raise ValueError(f"selected source {source_id} must be accessed or failed")
-    return automatic_success, automatic_failed, manual_success, manual_failed
+        visible_kinds = validate_observed_source(
+            record, source_id, source, requested_media
+        )
+        if access_mode == "automatic":
+            if record.get("authentication_used") is not False:
+                raise ValueError(
+                    f"automatic source {source_id} must require no authentication"
+                )
+            for media_kind in visible_kinds:
+                automatic_success[media_kind].add(source_id)
+        else:
+            if record.get("user_visible_browser") is not True:
+                raise ValueError(
+                    f"manual source {source_id} must be observed in the user's visible browser"
+                )
+            for media_kind in visible_kinds:
+                manual_success[media_kind].add(source_id)
+        all_success.add(source_id)
+    return automatic_success, manual_success, all_success, manual_failed
 
 
 def validate_observation_list(
@@ -409,10 +466,11 @@ def validate_observation_list(
     cross_source: bool = False,
     required_role: str | None = None,
     catalog: dict[str, dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
+) -> None:
     if not isinstance(value, list) or (not value and not allow_empty):
-        raise ValueError(f"{label} must be {'a list' if allow_empty else 'a non-empty list'}")
-    results: list[dict[str, Any]] = []
+        raise ValueError(
+            f"{label} must be {'a list' if allow_empty else 'a non-empty list'}"
+        )
     for index, item in enumerate(value):
         observation = require_mapping(item, f"{label}[{index}]")
         require_text(observation.get("observation"), f"{label}[{index}].observation")
@@ -423,13 +481,13 @@ def validate_observation_list(
                 allow_empty=True,
             )
         )
+        if not source_ids:
+            raise ValueError(f"{label}[{index}] must cite visible evidence")
         unknown = sorted(source_ids - allowed_source_ids)
         if unknown:
             raise ValueError(f"{label}[{index}] cites unavailable sources: {unknown}")
-        if not source_ids:
-            raise ValueError(f"{label}[{index}].source_ids must cite visible evidence")
         if cross_source and len(source_ids) < 2:
-            raise ValueError(f"{label}[{index}] must cite at least two automatic sources")
+            raise ValueError(f"{label}[{index}] must cite at least two visible sources")
         if required_role and catalog:
             invalid = sorted(
                 source_id
@@ -437,9 +495,9 @@ def validate_observation_list(
                 if required_role not in catalog[source_id].get("roles", [])
             )
             if invalid:
-                raise ValueError(f"{label}[{index}] must cite {required_role} sources; invalid: {invalid}")
-        results.append(observation)
-    return results
+                raise ValueError(
+                    f"{label}[{index}] must cite {required_role} sources; invalid: {invalid}"
+                )
 
 
 def validate_ready_summary(
@@ -476,7 +534,7 @@ def validate_ready_summary(
     validate_observation_list(
         summary.get("cross_source_patterns"),
         "calibration_summary.cross_source_patterns",
-        automatic_success,
+        automatic_success | manual_success,
         allow_empty=False,
         cross_source=True,
     )
@@ -489,154 +547,256 @@ def validate_ready_summary(
     )
     missing = sorted(PATTERN_DIMENSIONS - set(dimensions))
     if missing:
-        raise ValueError("calibration summary is missing pattern dimensions: " + ", ".join(missing))
+        raise ValueError(
+            "calibration summary is missing pattern dimensions: " + ", ".join(missing)
+        )
     for dimension in PATTERN_DIMENSIONS:
-        require_text(dimensions.get(dimension), f"calibration_summary.pattern_dimensions.{dimension}")
+        require_text(
+            dimensions.get(dimension),
+            f"calibration_summary.pattern_dimensions.{dimension}",
+        )
     require_text(summary.get("popularity_use"), "calibration_summary.popularity_use")
-    require_text(summary.get("calibration_state_note"), "calibration_summary.calibration_state_note")
+    require_text(
+        summary.get("calibration_state_note"),
+        "calibration_summary.calibration_state_note",
+    )
 
 
-def validate_static_summary(payload: dict[str, Any], catalog: dict[str, dict[str, Any]]) -> None:
-    authorization = require_mapping(payload.get("static_authorization"), "static_authorization")
-    require_timestamp(authorization.get("authorized_at"), "static_authorization.authorized_at")
-    require_text(authorization.get("user_confirmation"), "static_authorization.user_confirmation")
+def validate_static_summary(payload: dict[str, Any]) -> None:
+    authorization = require_mapping(
+        payload.get("static_authorization"), "static_authorization"
+    )
+    require_timestamp(
+        authorization.get("authorized_at"), "static_authorization.authorized_at"
+    )
+    require_text(
+        authorization.get("user_confirmation"),
+        "static_authorization.user_confirmation",
+    )
     summary = require_mapping(payload.get("calibration_summary"), "calibration_summary")
     long_term = summary.get("long_term_standards")
     if not isinstance(long_term, list) or not long_term:
         raise ValueError("static calibration requires long_term_standards")
     for index, item in enumerate(long_term):
-        observation = require_mapping(item, f"calibration_summary.long_term_standards[{index}]")
-        require_text(observation.get("observation"), f"long_term_standards[{index}].observation")
+        observation = require_mapping(
+            item, f"calibration_summary.long_term_standards[{index}]"
+        )
+        require_text(
+            observation.get("observation"),
+            f"calibration_summary.long_term_standards[{index}].observation",
+        )
         require_text_list(
             observation.get("source_ids", []),
-            f"long_term_standards[{index}].source_ids",
+            f"calibration_summary.long_term_standards[{index}].source_ids",
             allow_empty=True,
         )
-    for field in ("recent_platform_trends", "author_style_signals", "cross_source_patterns"):
+    for field in (
+        "recent_platform_trends",
+        "author_style_signals",
+        "cross_source_patterns",
+    ):
         if summary.get(field) != []:
-            raise ValueError(f"static-authorized mode cannot claim live {field.replace('_', ' ')}")
-    require_text_list(summary.get("applied_selection_rules"), "calibration_summary.applied_selection_rules")
-    require_mapping(summary.get("pattern_dimensions"), "calibration_summary.pattern_dimensions")
+            raise ValueError(
+                f"static-authorized mode cannot claim live {field.replace('_', ' ')}"
+            )
+    require_text_list(
+        summary.get("applied_selection_rules"),
+        "calibration_summary.applied_selection_rules",
+    )
+    require_mapping(
+        summary.get("pattern_dimensions"),
+        "calibration_summary.pattern_dimensions",
+    )
     require_text(summary.get("popularity_use"), "calibration_summary.popularity_use")
-    require_text(summary.get("calibration_state_note"), "calibration_summary.calibration_state_note")
+    require_text(
+        summary.get("calibration_state_note"),
+        "calibration_summary.calibration_state_note",
+    )
 
 
 def validate(payload: dict[str, Any], catalog: dict[str, dict[str, Any]]) -> str:
     reject_sensitive_fields(payload)
-    if payload.get("schema_version") != 2:
-        raise ValueError("schema_version must be 2")
+    if payload.get("schema_version") != 3:
+        raise ValueError("schema_version must be 3")
     material_type = require_text(payload.get("material_type"), "material_type")
     if material_type not in MATERIAL_TYPES:
         raise ValueError(f"unsupported material_type: {material_type}")
     media_kind_list = require_text_list(payload.get("media_kinds"), "media_kinds")
-    media_kinds = set(media_kind_list)
-    if len(media_kind_list) != len(media_kinds) or media_kinds - MEDIA_KINDS:
-        raise ValueError("media_kinds must contain unique photo/video values")
+    requested_media = set(media_kind_list)
+    if requested_media - MEDIA_KINDS:
+        raise ValueError("media_kinds must contain only photo/video values")
 
-    automatic_applicable = routed_source_ids(catalog, material_type, media_kinds, "automatic")
-    manual_applicable = routed_source_ids(
-        catalog, material_type, media_kinds, "manual-enhancement"
+    selected_automatic = routed_source_ids(
+        catalog, material_type, requested_media, {"automatic"}
     )
-    automatic_defaults = default_automatic_source_ids(catalog, material_type, media_kinds)
-
-    selection = require_mapping(payload.get("automatic_selection"), "automatic_selection")
-    require_exact_id_set(
-        selection.get("offered_source_ids"), automatic_applicable, "automatic_selection.offered_source_ids"
+    offered_manual = routed_source_ids(
+        catalog,
+        material_type,
+        requested_media,
+        {"manual-challenge", "manual-login"},
     )
-    require_exact_id_set(
-        selection.get("default_source_ids"), automatic_defaults, "automatic_selection.default_source_ids"
-    )
-    automatic_selected_list = require_text_list(
-        selection.get("selected_source_ids"), "automatic_selection.selected_source_ids"
-    )
-    automatic_selected = set(automatic_selected_list)
-    if len(automatic_selected_list) != len(automatic_selected):
-        raise ValueError("automatic_selection.selected_source_ids must not contain duplicates")
-    if automatic_selected - automatic_applicable:
-        raise ValueError("automatic selection contains sources not applicable to this material")
-    basis = require_text(selection.get("selection_basis"), "automatic_selection.selection_basis")
-    if basis == "type-default" and automatic_selected != automatic_defaults:
-        raise ValueError("type-default selection must use the type-specific default sources")
-    if basis == "custom-brief" and material_type != "custom":
-        raise ValueError("custom-brief selection is only valid for custom material")
-    if basis not in {"type-default", "user-selected", "custom-brief"}:
-        raise ValueError("unsupported automatic selection_basis")
 
     manual = require_mapping(payload.get("manual_enhancement"), "manual_enhancement")
-    require_exact_id_set(
-        manual.get("offered_source_ids"), manual_applicable, "manual_enhancement.offered_source_ids"
-    )
-    manual_selected_list = require_text_list(
-        manual.get("selected_source_ids"),
-        "manual_enhancement.selected_source_ids",
-        allow_empty=True,
-    )
-    manual_selected = set(manual_selected_list)
-    if len(manual_selected_list) != len(manual_selected):
-        raise ValueError("manual_enhancement.selected_source_ids must not contain duplicates")
-    if manual_selected - manual_applicable:
-        raise ValueError("manual enhancement contains inapplicable or prohibited sources")
     manual_status = require_text(manual.get("status"), "manual_enhancement.status")
     if manual_status not in MANUAL_STATES:
         raise ValueError(f"unsupported manual enhancement status: {manual_status}")
-    require_text(manual.get("detail"), "manual_enhancement.detail")
+    manual_mode = require_text(manual.get("mode"), "manual_enhancement.mode")
+    if manual_mode not in MANUAL_MODES:
+        raise ValueError(f"unsupported manual enhancement mode: {manual_mode}")
+    require_exact_id_set(
+        manual.get("offered_source_ids"),
+        offered_manual,
+        "manual_enhancement.offered_source_ids",
+    )
+    custom_catalog = validate_custom_sources(
+        manual.get("custom_sources"), requested_media
+    )
+    effective_catalog = dict(catalog)
+    overlap = set(effective_catalog) & set(custom_catalog)
+    if overlap:
+        raise ValueError(f"custom source ids collide with catalog: {sorted(overlap)}")
+    effective_catalog.update(custom_catalog)
+    selected_manual = set(
+        require_text_list(
+            manual.get("selected_source_ids"),
+            "manual_enhancement.selected_source_ids",
+            allow_empty=True,
+        )
+    )
+    if len(selected_manual) > 1:
+        raise ValueError("manual enhancement recommends and selects at most one source")
+    if selected_manual - (offered_manual | set(custom_catalog)):
+        raise ValueError("manual enhancement selected an unavailable source")
     readiness = manual.get("user_readiness_confirmed")
-    if manual_status == "declined" and (manual_selected or readiness is not False):
-        raise ValueError("declined manual enhancement must select no sources and not claim readiness")
-    if manual_status == "completed" and (not manual_selected or readiness is not True):
-        raise ValueError("completed manual enhancement requires readiness and selected sources")
+    require_text(manual.get("detail"), "manual_enhancement.detail")
 
-    records = index_source_records(payload, catalog)
-    automatic_success, automatic_failed, manual_success, manual_failed = validate_source_records(
-        records,
-        catalog,
-        media_kinds,
-        automatic_selected,
-        manual_selected,
+    expected_access = {
+        "challenge": "manual-challenge",
+        "login": "manual-login",
+        "custom": "manual-custom",
+    }
+    if manual_mode == "none":
+        if manual_status != "declined" or selected_manual or custom_catalog:
+            raise ValueError("manual mode none must be declined with no selected/custom source")
+        if readiness is not False:
+            raise ValueError("declined manual enhancement must not claim readiness")
+    else:
+        if len(selected_manual) != 1:
+            raise ValueError("manual enhancement requires exactly one selected source")
+        selected_id = next(iter(selected_manual))
+        if effective_catalog[selected_id]["access_mode"] != expected_access[manual_mode]:
+            raise ValueError("manual source access mode does not match the selected manual mode")
+        if manual_mode == "custom" and set(custom_catalog) != selected_manual:
+            raise ValueError("custom mode must define exactly the selected custom source")
+        if manual_mode != "custom" and custom_catalog:
+            raise ValueError("catalog manual modes cannot define custom sources")
+        if manual_status == "completed" and readiness is not True:
+            raise ValueError("completed manual enhancement requires user readiness")
+
+    records = index_source_records(payload, set(effective_catalog))
+    automatic_success_by_kind, manual_success_by_kind, all_success, manual_failed = (
+        validate_source_records(
+            records,
+            effective_catalog,
+            requested_media,
+            selected_automatic,
+            selected_manual,
+        )
     )
-    if manual_status == "completed" and not manual_success:
-        raise ValueError("manual-enhanced calibration requires actually visible manual content")
-    if manual_status == "cannot-use" and manual_success:
-        raise ValueError("cannot-use manual enhancement cannot contain successful manual samples")
+    visible_manual_ids = set().union(*manual_success_by_kind.values())
+    if manual_status == "completed" and not visible_manual_ids:
+        raise ValueError("completed manual enhancement requires visible manual evidence")
+    if manual_status == "cannot-use" and visible_manual_ids:
+        raise ValueError("cannot-use manual enhancement cannot contain visible evidence")
+    if manual_status == "declined" and (selected_manual or visible_manual_ids):
+        raise ValueError("declined manual enhancement cannot select or use a source")
+    if manual_status == "cannot-use" and selected_manual - manual_failed:
+        raise ValueError("cannot-use manual enhancement must record the selected source failure")
 
-    automatic = require_mapping(payload.get("automatic_calibration"), "automatic_calibration")
-    require_timestamp(automatic.get("checked_at"), "automatic_calibration.checked_at")
+    automatic = require_mapping(
+        payload.get("automatic_calibration"), "automatic_calibration"
+    )
+    require_timestamp(
+        automatic.get("checked_at"), "automatic_calibration.checked_at"
+    )
     require_text(automatic.get("detail"), "automatic_calibration.detail")
-    require_exact_id_set(
-        automatic.get("successful_source_ids"),
-        automatic_success,
-        "automatic_calibration.successful_source_ids",
+    media_results = require_mapping(
+        automatic.get("media"), "automatic_calibration.media"
     )
-    require_exact_id_set(
-        automatic.get("failed_source_ids"),
-        automatic_failed,
-        "automatic_calibration.failed_source_ids",
-    )
-    computed_state = "ready" if len(automatic_success) >= 2 else "partial" if automatic_success else "unavailable"
-    state = require_text(automatic.get("status"), "automatic_calibration.status")
-    if state not in AUTOMATIC_STATES or state != computed_state:
-        raise ValueError(f"automatic_calibration.status must be {computed_state} from visible samples")
+    if set(media_results) != requested_media:
+        raise ValueError("automatic_calibration.media must match requested media_kinds")
+
+    final_ready = True
+    final_counts: dict[str, int] = {}
+    for media_kind in sorted(requested_media):
+        result = require_mapping(
+            media_results[media_kind],
+            f"automatic_calibration.media.{media_kind}",
+        )
+        require_text(
+            result.get("detail"),
+            f"automatic_calibration.media.{media_kind}.detail",
+        )
+        automatic_applicable = {
+            source_id
+            for source_id in selected_automatic
+            if media_kind in effective_catalog[source_id]["media_kinds"]
+        }
+        successful = automatic_success_by_kind[media_kind]
+        failed = automatic_applicable - successful
+        require_exact_id_set(
+            result.get("successful_source_ids"),
+            successful,
+            f"automatic_calibration.media.{media_kind}.successful_source_ids",
+        )
+        require_exact_id_set(
+            result.get("failed_source_ids"),
+            failed,
+            f"automatic_calibration.media.{media_kind}.failed_source_ids",
+        )
+        expected_state = (
+            "ready" if len(successful) >= 2 else "partial" if successful else "unavailable"
+        )
+        state = require_text(
+            result.get("status"),
+            f"automatic_calibration.media.{media_kind}.status",
+        )
+        if state != expected_state:
+            raise ValueError(
+                f"automatic_calibration.media.{media_kind}.status must be {expected_state}"
+            )
+        combined = successful | manual_success_by_kind[media_kind]
+        final_counts[media_kind] = len(combined)
+        final_ready = final_ready and len(combined) >= 2
 
     calibration_mode = require_text(payload.get("calibration_mode"), "calibration_mode")
     static_authorized = payload.get("static_fallback_authorized")
-    if state != "ready":
-        expected_mode = state
-        if static_authorized is True:
-            if calibration_mode != "static-authorized":
-                raise ValueError("authorized fallback requires calibration_mode static-authorized")
-            validate_static_summary(payload, catalog)
-            return f"ready-static-authorized-{state}"
-        if static_authorized is not False or calibration_mode != expected_mode:
-            raise ValueError(f"automatic {state} state must remain {expected_mode} until authorization")
-        return f"paused-{state}"
+    automatic_ids = set().union(*automatic_success_by_kind.values())
+    manual_ids = set().union(*manual_success_by_kind.values())
+    if final_ready:
+        if static_authorized is not False:
+            raise ValueError("ready live calibration cannot claim static fallback")
+        expected_mode = (
+            "manual-enhanced" if manual_status == "completed" else "automatic"
+        )
+        if calibration_mode != expected_mode:
+            raise ValueError(f"ready calibration_mode must be {expected_mode}")
+        validate_ready_summary(
+            payload, effective_catalog, automatic_ids, manual_ids
+        )
+        return f"ready-{expected_mode}"
 
-    if static_authorized is not False:
-        raise ValueError("ready automatic calibration must not claim static fallback authorization")
-    expected_mode = "manual-enhanced" if manual_status == "completed" else "automatic"
-    if calibration_mode != expected_mode:
-        raise ValueError(f"ready calibration_mode must be {expected_mode}")
-    validate_ready_summary(payload, catalog, automatic_success, manual_success)
-    return f"ready-{expected_mode}"
+    overall_state = "partial" if any(final_counts.values()) else "unavailable"
+    if static_authorized is True:
+        if calibration_mode != "static-authorized":
+            raise ValueError("authorized fallback requires calibration_mode static-authorized")
+        validate_static_summary(payload)
+        return f"ready-static-authorized-{overall_state}"
+    if static_authorized is not False or calibration_mode != overall_state:
+        raise ValueError(
+            f"incomplete per-media calibration must remain {overall_state} until authorization"
+        )
+    return f"paused-{overall_state}"
 
 
 def main() -> int:
@@ -649,10 +809,10 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if status == "paused-partial":
-        print(PARTIAL_NOTICE, file=sys.stderr)
+        print(f"{status}: {PARTIAL_NOTICE}", file=sys.stderr)
         return 3
     if status == "paused-unavailable":
-        print(UNAVAILABLE_NOTICE, file=sys.stderr)
+        print(f"{status}: {UNAVAILABLE_NOTICE}", file=sys.stderr)
         return 3
     print(status)
     return 0

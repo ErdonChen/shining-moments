@@ -57,15 +57,47 @@ Score each dimension from 0–5:
 
 Group exact and near-duplicates during the normal first pass. Recommend the strongest representative for `select`; use `review` for genuinely useful alternatives, not every technically usable frame. For byte-identical files, prefer the canonical original with the richest metadata and highest valid resolution; if still tied, use a stable path order. Repetition alone never makes a usable item `excluded`; a usable item omitted from the shortlist is `not_selected`.
 
-## Conditional backup overflow reduction
+## Quality-first soft selection guardrails
 
-After the normal first pass, calculate the review ratio against the deduplicated unique candidate set. A RAW+JPEG pair counts once, as does a group of byte-identical files. The default ceiling is 20%; an explicit user-supplied ceiling may replace it.
+The highest principle is to retain meaningful, high-quality, usable, and non-redundant material. Percentages exist only to detect an indiscriminate shortlist; they are neither quotas nor hard caps.
 
-- The percentage is a ceiling, never a quota or target. If the first-pass review ratio is at or below the ceiling, do nothing: neither prune good review items nor add weak ones to fill the percentage.
-- Only when the ratio is above the ceiling, run a second reduction pass until the ratio is at or below it. This is a post-classification check, not another opening question.
-- Remove unchanged redundancy first. Compare scene, identities, people count, expressions, pose or action, framing, and story beat. An ordinary same-scene/person burst normally keeps no more than 1–2 truly distinct `review` alternatives in addition to any deserved `select` representative.
-- An irreplaceable family or friend progression may keep 3–5 `review` or independently justified `memory` frames only when they carry genuinely different setup, peak, resolution, or relationship beats. The global review ceiling still wins when the collection is too small to hold that many review frames. Never retain an entire burst by default, and never relabel overflow as `memory`.
-- When a global trim is still required, use the active category profile and the calibrated visual/story standard. Popularity counts never substitute for judgment.
+After the natural first pass, calculate `select` and `review` ratios separately. A ratio above 10% for `select` or 25% for `review` triggers a second review automatically. At or below the trigger, do not prune deserved items and never add weak items to fill a percentage.
+
+### Photo denominator
+
+For photos, use the deduplicated candidate count. A RAW+JPEG pair counts once, as does a byte-identical group. A very small set may retain at least one deserved `select` even when one item exceeds 10%.
+
+### Video denominator
+
+For videos, use duration rather than file count:
+
+- denominator: total duration of all deduplicated readable source videos;
+- `select` numerator: union of all `select` intervals;
+- `review` numerator: union of all `review` intervals after subtracting overlap already counted as `select`;
+- overlapping or duplicate timecodes never count twice;
+- a collection with at most 60 seconds of total readable video keeps its natural first pass and skips percentage compression.
+
+### Second-review order
+
+When either trigger is exceeded:
+
+1. remove unchanged redundancy, weaker representatives, generic filler, and video dead air first;
+2. move ordinary `select` overflow to `review`;
+3. move ordinary `review` overflow to `not_selected`;
+4. never use `memory` or `excluded` as overflow storage.
+
+Compare scene, identities, people count, expressions, pose or action, framing, sound, timing, and story beat. An ordinary unchanged burst normally keeps only the strongest truly distinct alternatives.
+
+### Evidence-backed exceptions
+
+The 10%/25% triggers may be exceeded automatically when items remain meaningful, high-quality, usable, and non-redundant. Record a concrete `selection_evidence` field and, when relevant, `story_beat`, `relationship_progression`, and `representative_score`. Valid exceptions include:
+
+- an irreplaceable family/friend progression with distinct setup, peak, resolution, or relationship beats;
+- rare events or unique perspectives that cannot be substituted by another candidate;
+- a complete meaningful video action, dialogue exchange, emotional arc, or narrative payoff that should not be cut solely to satisfy a percentage;
+- several individually strong scenes that are not near-duplicates.
+
+There is no secondary percentage cap for genuine exceptions. Do not protect an entire near-identical burst with repeated generic evidence. Report the final ratios, every retained exception, its evidence, and why it is non-redundant.
 
 ### Representative evidence
 
@@ -81,6 +113,7 @@ Add one manifest row per useful interval with precise `start_time`, `end_time`, 
 - **Link + timecodes:** link the whole original once. When intervals differ, place the link only in the highest-priority included folder: `select`, then `review`, then `memory`. Keep every interval in the manifest.
 - **Copy + timecodes:** copy no whole video. Keep the original path, category, reason, and precise interval in the manifest and report.
 - **Clips:** create a new H.264/AAC MP4 review derivative for every timed `select`, `review`, or `memory` interval. A memory derivative stays in `03_纪念留档` and is not a normal-edit recommendation. Never create media for `excluded` rows.
+- Compute the 10%/25% guardrails from interval-union duration against total readable source duration, never from the number of video files. A long collection may retain a complete meaningful action, dialogue, or emotional arc above the trigger when the manifest records concrete evidence.
 - Cap landscape derivatives at 1280×720 and portrait derivatives at 720×1280 while preserving aspect ratio. Never upscale a source already within those bounds.
 - Treat HDR/HLG, display rotation, and variable frame rate as technical-risk signals. Validate a short sample for color, orientation, playability, and audio/video duration drift before the full interval.
 - A derivative failure must be explicit: retain the source/timecode mapping, set the result to `not-generated` / `failed`, give an actionable `ffmpeg`/`ffprobe` hint, and never fall back to copying the full high-bitrate source.

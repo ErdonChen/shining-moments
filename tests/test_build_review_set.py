@@ -27,6 +27,13 @@ class BuildReviewSetTests(unittest.TestCase):
         for path in (self.select, self.review, self.memory, self.excluded):
             path.write_bytes(path.name.encode("utf-8"))
 
+        self.duration_only_ffprobe = self.root / "duration_only_ffprobe.py"
+        self.duration_only_ffprobe.write_text(
+            "#!/usr/bin/env python3\nprint('600.0')\n",
+            encoding="utf-8",
+        )
+        self.duration_only_ffprobe.chmod(0o755)
+
         self.manifest = self.root / "manifest.csv"
         with self.manifest.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
@@ -83,6 +90,7 @@ class BuildReviewSetTests(unittest.TestCase):
         ffmpeg=None,
         ffprobe=None,
         raw_converter=None,
+        select_ceiling=1.0,
         review_ceiling=1.0,
     ):
         command = [
@@ -99,10 +107,14 @@ class BuildReviewSetTests(unittest.TestCase):
             command.extend(["--video-delivery", video_delivery])
         if ffmpeg is not None:
             command.extend(["--ffmpeg", str(ffmpeg)])
+        if ffprobe is None and video_delivery == "timecodes":
+            ffprobe = self.duration_only_ffprobe
         if ffprobe is not None:
             command.extend(["--ffprobe", str(ffprobe)])
         if raw_converter is not None:
             command.extend(["--raw-converter", str(raw_converter)])
+        if select_ceiling is not None:
+            command.extend(["--select-ceiling", str(select_ceiling)])
         if review_ceiling is not None:
             command.extend(["--review-ceiling", str(review_ceiling)])
         return subprocess.run(
@@ -1321,9 +1333,38 @@ class BuildReviewSetTests(unittest.TestCase):
         self.assertEqual(sum(row["decision"] == "review" for row in screening), 3)
         self.assertEqual(not_selected, [])
         report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
-        self.assertIn("唯一候选数：25", report)
-        self.assertIn("备选比例：12.00%", report)
-        self.assertIn("溢出精简：未触发", report)
+        self.assertIn("唯一候选数（照片）：25", report)
+        self.assertIn("备选比例（照片）：12.00%", report)
+        self.assertIn("溢出精简（照片）：未触发", report)
+
+    def test_default_select_trigger_runs_above_ten_percent(self):
+        rows = []
+        for index in range(20):
+            source = self.make_candidate(f"primary-default-{index:02d}.jpg")
+            rows.append(
+                {
+                    "source_path": source,
+                    "decision": "select" if index < 8 else "excluded",
+                    "reason": "ordinary first-pass choice",
+                    "candidate_id": f"primary-default-{index:02d}",
+                    "similarity_group": "",
+                    "relationship_progression": "false",
+                    "story_beat": "",
+                    "representative_score": str(80 - index),
+                    "capture_style": "documentary",
+                    "selection_evidence": "",
+                }
+            )
+        self.write_overflow_manifest(rows)
+
+        result = self.run_script(select_ceiling=None, review_ceiling=1.0)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        screening = self.read_output_csv("筛选清单.csv")
+        self.assertEqual(sum(row["decision"] == "select" for row in screening), 2)
+        self.assertEqual(sum(row["decision"] == "review" for row in screening), 6)
+        report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
+        self.assertIn("主选软触发线：10.00%", report)
 
     def test_review_overflow_reduces_redundant_burst_below_default_ceiling(self):
         rows = []
@@ -1352,12 +1393,12 @@ class BuildReviewSetTests(unittest.TestCase):
         screening = self.read_output_csv("筛选清单.csv")
         not_selected = self.read_output_csv("未入选清单.csv")
         retained_review = [row for row in screening if row["decision"] == "review"]
-        self.assertLessEqual(len(retained_review), 4)
-        self.assertGreaterEqual(len(not_selected), 7)
+        self.assertLessEqual(len(retained_review), 5)
+        self.assertGreaterEqual(len(not_selected), 6)
         self.assertTrue(all(row["decision"] == "not_selected" for row in not_selected))
         report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
-        self.assertIn("备选比例：55.00%", report)
-        self.assertIn("溢出精简：已触发", report)
+        self.assertIn("备选比例（照片）：55.00%", report)
+        self.assertIn("溢出精简（照片）：已触发", report)
 
     def test_posed_group_overflow_keeps_best_face_and_gaze_representative(self):
         candidates = [
@@ -1499,8 +1540,8 @@ class BuildReviewSetTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
-        self.assertIn("唯一候选数：2", report)
-        self.assertIn("备选比例：100.00%", report)
+        self.assertIn("唯一候选数（照片）：2", report)
+        self.assertIn("备选比例（照片）：100.00%", report)
         retained_review = [
             row
             for row in self.read_output_csv("筛选清单.csv")
@@ -1535,8 +1576,8 @@ class BuildReviewSetTests(unittest.TestCase):
         self.assertEqual(sum(row["decision"] == "review" for row in screening), 3)
         self.assertEqual(self.read_output_csv("未入选清单.csv"), [])
         report = (self.output / "筛选报告.md").read_text(encoding="utf-8")
-        self.assertIn("备选上限：40.00%", report)
-        self.assertIn("溢出精简：未触发", report)
+        self.assertIn("备选软触发线：40.00%", report)
+        self.assertIn("溢出精简（照片）：未触发", report)
 
 
 if __name__ == "__main__":

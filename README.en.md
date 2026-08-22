@@ -15,8 +15,9 @@ English | [简体中文](README.md)
 Shining Moments is a conservative “first filter”: it narrows the review set while leaving the final choice to the user.
 
 - **Choose the material type before applying criteria:** Start with Mixed, Landscape/Travel, Architecture/Space, Documentary/Culture, Portrait, Family, Friends, Vlog/Event, or Custom. Each type uses targeted criteria instead of repeatedly applying one generic scoring template.
-- **Build visual calibration from no-login automatic public sources first:** Photo sources are Unsplash (curated composition and light), Pexels Photos (people, lifestyle, and general scenes), public Flickr content (real events, street, and community perspectives), and Wikimedia Commons images (place, history, and cultural context). Video sources are Pexels Videos (action, shot structure, and general B-roll), Pixabay Videos (broad subject coverage), Mixkit (polished, pace-forward footage), and Wikimedia Commons videos when suitable (documentary, historical, and cultural context). The Skill routes them by material type, and automatic calibration requires actual visible media from at least two suitable sources in the current run.
-- **Add manual enhancement only when useful:** After automatic sources are selected, the Skill may offer YouTube, Bilibili, Vimeo, Instagram, and Xiaohongshu. The user completes login or challenges themselves in their own visible browser; declining or being unable to use them continues the automatic workflow without blocking. See the [layered reference rules](#reference-sites).
+- **Run a fixed no-login automatic calibration:** Photos use Wikimedia Commons Images, public Flickr content, and Google Images; videos use Wikimedia Commons Videos and Google Videos. Users no longer check individual automatic sites. Photo and video gates are separate, and each requested kind needs at least two distinct sources with media actually visible or playable in this run.
+- **Use at most one manual enhancement per run:** After automatic calibration, the user may choose human-verification enhancement (Unsplash photos or Pexels photos/videos), user-login enhancement (Xiaohongshu, Instagram, YouTube, or Bilibili), or another URL. The Skill recommends only one best-fit source. One Pexels challenge can be reused for both photos and videos.
+- **Keep quality ahead of soft ratio guardrails:** The 10% primary and 25% review ratios only trigger a second pass that detects indiscriminate selection; they are not hard caps or quotas. Meaningful, high-quality, usable, non-redundant media may exceed them with recorded evidence. Video ratios use total source duration and interval unions, not file counts.
 - **Organize photos and videos consistently, with a separate emotional channel:** The review set is divided into selects, alternatives for re-screening, and memory keeps. Family, friendship, and irreplaceable emotional moments can be preserved independently of purely technical quality.
 - **Copy mode automatically stays lightweight instead of hauling large sources:** Link mode uses the least space. Copy mode is designed for human re-screening: it prefers a paired JPEG for RAW or generates a JPEG review copy, and exports only selected 4K/1080p intervals as about-720p review clips instead of copying whole high-bitrate videos. This can substantially reduce review-directory storage, but it is not zero-storage; the script estimates space first.
 - **Keep every derivative traceable and every original safe:** Photo, video, and lightweight-copy records preserve the original path, category, reason, and timecode mapping. Originals are never moved, overwritten, or deleted, and final editing should use the originals.
@@ -42,7 +43,7 @@ Runtime requirements: Python 3.10+; generating a RAW review JPEG requires ImageM
 
 ## The four opening steps
 
-First confirm the source and a new output directory, then complete these four steps in order.
+First confirm that the originals are read-only, then complete these four steps in order. Step 4 confirms the delivery method and a new output directory.
 
 ### Step 1: Choose the material type
 
@@ -60,26 +61,28 @@ First confirm the source and a new output directory, then complete these four st
 
 The default is Mixed. Relationship and memory value remain safety channels even when another category is selected.
 
-### Step 2: Choose reference sources
+### Step 2: Choose media kinds
 
-The Skill first shows the automatic public sources applicable to the material type and photo/video scope. The photo pool is Unsplash, Pexels Photos, public Flickr content, and Wikimedia Commons images; the video pool is Pexels Videos, Pixabay Videos, Mixkit, and Wikimedia Commons videos when suitable. The user may select a subset; no selection uses the type-specific defaults. Automatic sources require no login, and only full images or playable videos actually visible in the current run count as calibration evidence. The single table under [Reference sites](#reference-sites) explains what each source contributes.
+Choose Photos, Videos, or Photos + Videos. Photo and video references are calibrated independently: images must actually be visible, videos must actually play, and each requested media kind needs at least two distinct visible sources.
 
-After automatic selection, the Skill offers optional manual-enhancement sources. Declining or being unable to use manual enhancement never blocks the task; the workflow continues with automatic public sources. See [Reference sites](#reference-sites) for the layered source list and authentication boundary.
+### Step 3: Run automatic calibration and optionally add one manual source
 
-### Step 3: Choose the organization mode
+The fixed no-login automatic pool always runs, without asking the user to check sites individually. Photos use Wikimedia Commons Images, public Flickr content, and Google Images. Videos use Wikimedia Commons Videos and Google Videos. A Google Images enlarged preview must include its origin URL; thumbnails do not count. Google Images and Google Videos each count as one source regardless of the origin domains shown in results.
 
-- **Symbolic links (default):** do not duplicate media content and use the least space; links, manifests, and reports still occupy a small amount.
-- **Copies:** create lightweight files for human re-screening. Directly reviewable JPEG/HEIC/PNG and similar photos keep the safe copy behavior; RAW becomes a JPEG review copy, and selected 4K/1080p intervals become about-720p review clips. Copy mode does not directly copy large RAW files or whole high-bitrate videos, but it still uses storage and shows an estimate before execution.
+After the automatic pass, the Skill asks whether the user wants one manual enhancement:
 
-When Copies is selected, the Skill restates and confirms this lightweight-derivative and storage trade-off before writing. Neither mode moves, overwrites, or deletes originals. A non-empty output directory is rejected to protect previous results.
+- **Human-verification enhancement:** recommend one of Unsplash (photos) or Pexels (photos/videos) by topic and media kind. The user completes the challenge in their own visible browser. One Pexels challenge can be reused for photos and videos; do not request a second challenge.
+- **User-login enhancement:** recommend one of Xiaohongshu, Instagram, YouTube, or Bilibili by topic, language, and media kind. The user chooses the site and logs in themselves in their own visible browser.
+- **Another URL:** the user may enter another reference URL. Open it first; use public visible media directly, ask the user to complete a challenge if one appears, and ask them to log in only if the site actually requires it.
 
-### Step 4: Choose video delivery
+The user can accept the recommendation, choose a different listed source, or enter a custom URL. If they decline or the enhancement fails, automatic calibration still continues. Visible automatic and manual evidence may combine to satisfy the two-source gate.
 
-- **Link mode defaults to timecodes only:** link the whole source and record recommended intervals; separate new clips remain an explicit option.
-- **Copy mode defaults to lightweight candidate clips:** timed included intervals in Select, Review, and Memory become new H.264/AAC MP4 files. Landscape output is capped at 1280×720 and portrait output at 720×1280; sources already at or below those bounds are never enlarged or stretched.
-- **Copy mode with explicit timecodes only:** preserve original-path and timecode mappings without copying the whole video.
+### Step 4: Choose links or lightweight copies
 
-Clip export requires `ffmpeg` and `ffprobe`. Timecodes are validated against source duration. HDR/HLG, rotation metadata, or variable frame rate triggers a short sample check for color tagging, orientation, playability, and audio/video duration drift before the full candidate interval is exported. A failure never falls back to copying the whole source video.
+- **Symbolic links (default):** do not duplicate media content, use the least space, and preserve precise video timecodes.
+- **Lightweight copies:** safely copy ordinary photos, reuse or generate JPEG review derivatives for RAW, and export included video intervals as about-720p H.264/AAC review clips. Never copy whole high-bitrate videos. Copy mode is not zero-storage and shows an estimate before writing.
+
+This step also confirms a new, separate output directory. Neither mode moves, overwrites, or deletes originals, and a non-empty output directory is rejected. If the user explicitly asks, copy mode can keep timecode mappings without exporting clips. Clip export requires `ffmpeg` and `ffprobe`; HDR/HLG, rotation metadata, or variable frame rate triggers a short sample check, and a failure never falls back to copying the whole source video.
 
 ## Lightweight-copy manifest and example
 
@@ -112,6 +115,9 @@ Example mappings from `shortlist.csv` to review derivatives:
 - **Duplicates:** recommend one representative when appropriate and keep every other usable version in Review.
 - **Shaky video:** ordinary footage may be excluded when reasonable stabilization cannot recover it; recognizable family or friendship interaction stays in Review; visually unrecognizable but known sentimental material goes to Memory only.
 - **Long video:** judge intervals independently and record precise timecodes; never condemn a whole source from one bad frame.
+- **10%/25% are soft triggers only:** if Primary exceeds 10% or Review exceeds 25%, run an automatic second pass that removes redundancy, weaker alternatives, generic filler, and video dead air first. These are neither quotas nor hard caps.
+- **Quality exceptions:** meaningful, high-quality, usable, non-redundant media may exceed the triggers when concrete evidence is recorded. There is no second percentage cap. Ordinary Primary overflow moves to Review; ordinary Review overflow moves to Not Selected, never Memory or Excluded.
+- **Separate denominators:** photos use the deduplicated candidate count, with RAW+JPEG and exact duplicates counted once. Videos use deduplicated readable source duration and interval unions, not video file count. A readable video collection totaling 60 seconds or less keeps its natural first pass.
 
 ## Output structure
 
@@ -120,22 +126,25 @@ Example mappings from `shortlist.csv` to review derivatives:
 02_备选_用户复筛/
 03_纪念留档/
 筛选清单.csv
+未入选清单.csv
 排除清单.csv
 筛选报告.md
 ```
 
 ## Reference sites
 
-Use these sources to calibrate composition, light, gesture, pacing, and narrative. Do not copy individual works or treat likes and views as quality scores. The reading and execution order is: establish the visual foundation with no-login automatic public sources first, then add manual enhancement only when useful. The Skill dynamically routes an applicable subset by material type; this table is the single authoritative user-facing source explanation.
+Use these sources to calibrate composition, light, gesture, pacing, and narrative. Do not copy individual works or treat likes and views as quality scores. The order is a fixed no-login automatic pass followed by at most one human-verification, user-login, or custom-URL enhancement. This is the single authoritative user-facing source table.
 
-| Source layer | Photo sites | Video sites | Rule |
+| Flow layer | Photo sources | Video sources | User action and rule |
 |---|---|---|---|
-| **Automatic public sources (no login, first)** | [Unsplash](https://unsplash.com/): curated composition, light, travel, and lifestyle imagery.<br>[Pexels Photos](https://www.pexels.com/): people, lifestyle, and broadly useful general scenes.<br>[Public Flickr content](https://www.flickr.com/explore): real events, street, community, and personal perspectives.<br>[Wikimedia Commons images](https://commons.wikimedia.org/wiki/Main_Page): place, architecture, history, and cultural context. | [Pexels Videos](https://www.pexels.com/videos/): human action, shot structure, and general B-roll.<br>[Pixabay Videos](https://pixabay.com/videos/): broad motion coverage across nature, cities, technology, and more.<br>[Mixkit](https://mixkit.co/free-stock-video/): polished, pace-forward footage resembling finished or commercial shorts.<br>[Wikimedia Commons videos](https://commons.wikimedia.org/wiki/Category:Videos): documentary, historical, and cultural context when suitable. | The user may select sources; no selection uses the type default. Only full images or video playback actually visible in this run count, and automatic visual calibration requires at least two suitable sources. |
-| **Optional manual enhancement (after automatic selection)** | [Instagram](https://www.instagram.com/): contemporary portrait, lifestyle, and short-form visual language.<br>[Xiaohongshu](https://www.xiaohongshu.com/explore): Chinese-language lifestyle, travel, product, and local-scene references. | [YouTube](https://www.youtube.com/): long- and short-form narrative, shot organization, and editing structure.<br>[Bilibili](https://www.bilibili.com/): Chinese-language Vlogs, events, culture, and community content.<br>[Vimeo](https://vimeo.com/): auteur work, cinematography, and post-production craft.<br>Instagram: short-video pacing and contemporary visual expression.<br>Xiaohongshu: Chinese-language lifestyle, travel, and local short-video expression. | The user must complete login or challenges themselves in their own visible browser, then confirm readiness and selected sources. Use only content actually visible there. |
+| **1. No-login automatic calibration (always runs)** | [Wikimedia Commons Images](https://commons.wikimedia.org/wiki/Category:Images): place, architecture, history, culture, and documentary context.<br>[Public Flickr content](https://www.flickr.com/explore): real events, street, community, and personal perspectives.<br>[Google Images](https://images.google.com/): broad cross-site discovery; enlarged previews require a recorded origin URL, and thumbnails do not count. | [Wikimedia Commons Videos](https://commons.wikimedia.org/wiki/Category:Videos): documentary, historical, cultural, location, and public-media motion references.<br>[Google Videos](https://www.google.com/videohp): cross-site discovery of action, pacing, shot structure, and topic-specific video. | Do not ask the user to check individual sites. Only full images/qualified enlarged previews or actual video playback count. Google Images and Google Videos each count as one source. |
+| **2A. Optional human-verification enhancement (at most one)** | [Unsplash](https://unsplash.com/): curated composition, light, travel, portrait, and lifestyle photos.<br>[Pexels](https://www.pexels.com/): people, lifestyle, and general-scene photos. | [Pexels Videos](https://www.pexels.com/videos/): action, shot structure, and general B-roll. | Recommend one source by topic/media kind. The user completes the challenge in their own visible browser. One Pexels challenge can be reused for both photos and videos; do not ask for a second challenge. |
+| **2B. Optional user-login enhancement (at most one)** | [Xiaohongshu](https://www.xiaohongshu.com/explore): Chinese-language lifestyle, travel, and local context.<br>[Instagram](https://www.instagram.com/): contemporary portrait, lifestyle, and creator photo language. | [YouTube](https://www.youtube.com/): long- and short-form narrative, shot organization, and editing structure.<br>[Bilibili](https://www.bilibili.com/): Chinese-language Vlogs, events, culture, and community video.<br>Xiaohongshu and Instagram: short-video and contemporary visual expression. | Recommend one source by topic/language. The user chooses the site and logs in themselves in their own visible browser. |
+| **2C. User-supplied custom URL** | Any photo-reference site entered by the user | Any video-reference site entered by the user | Open the URL first. Use public visible media directly, ask the user to complete a challenge if one appears, and ask them to log in only if the site actually requires it. |
 
-During manual enhancement, the Skill **never asks for, receives, stores, or handles** usernames, passwords, MFA codes, cookies, account credentials, or other authentication secrets, and it never bypasses protection. If the user declines or cannot use manual enhancement, the workflow falls back to and continues with automatic public sources without blocking.
+During manual enhancement, the Skill **never asks for, receives, stores, or handles** usernames, passwords, MFA codes, cookies, API keys, account credentials, or other authentication secrets, and it never bypasses protection. If the user declines or cannot use manual enhancement, automatic calibration still continues and is not cancelled.
 
-X is not an automatic route and is never offered for manual enhancement. User-provided URLs or images remain user inputs rather than routed sources or automatic-connectivity evidence. A loaded page, text, search snippet, thumbnail, or remembered platform style does not count as visual calibration.
+X and Vimeo are not routed sources. A loaded page, text, search snippet, thumbnail, or remembered platform style does not count as visual calibration. Photos and videos each need two sources visible in this run; one is partial and zero is unavailable. Screening pauses unless the user explicitly authorizes static standards.
 
 ## Usage
 
