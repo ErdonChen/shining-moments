@@ -147,12 +147,32 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--select-ceiling",
+        type=float,
+        default=0.10,
+        help=(
+            "Soft second-pass trigger for the primary shortlist after deduplicating "
+            "photos or measuring video duration (default: 0.10). Evidenced, "
+            "non-redundant quality exceptions may remain above it."
+        ),
+    )
+    parser.add_argument(
         "--review-ceiling",
         type=float,
-        default=0.20,
+        default=0.25,
         help=(
-            "Conditional review-ratio ceiling after deduplicating candidates; "
-            "overflow reduction runs only above this ratio (default: 0.20)."
+            "Soft second-pass trigger for the backup shortlist after deduplicating "
+            "photos or measuring video duration (default: 0.25). Evidenced, "
+            "non-redundant quality exceptions may remain above it."
+        ),
+    )
+    parser.add_argument(
+        "--short-video-seconds",
+        type=float,
+        default=60.0,
+        help=(
+            "Collections at or below this total readable video duration keep their "
+            "natural first pass instead of percentage compression (default: 60)."
         ),
     )
     return parser.parse_args()
@@ -376,127 +396,520 @@ def unique_candidate_groups(rows: list[dict[str, str]]) -> list[list[int]]:
     return sorted(groups.values(), key=lambda group: min(group))
 
 
-def candidate_rank(group: list[int], rows: list[dict[str, str]]) -> tuple[float, str]:
-    review_rows = [index for index in group if rows[index]["decision"] == "review"]
-    eligible = review_rows or group
-    best_score = max(float(rows[index]["representative_score"]) for index in eligible)
-    best_path = min(
-        rows[index]["source_path"]
-        for index in eligible
-        if float(rows[index]["representative_score"]) == best_score
+def quality_exception(row: dict[str, str]) -> bool:
+    """Return whether a row contains auditable evidence for a soft-limit exception."""
+
+    if not row.get("selection_evidence", "").strip():
+        return False
+    score = float(row.get("representative_score") or 0)
+    return (
+        score >= 85
+        or row.get("relationship_progression") == "true"
+        or bool(row.get("story_beat", "").strip())
     )
-    return (-best_score, best_path)
 
 
-def best_review_row(group: list[int], rows: list[dict[str, str]]) -> int:
-    review_rows = [index for index in group if rows[index]["decision"] == "review"]
+def ranked_group_indices(
+    group_indices: list[int],
+    groups: list[list[int]],
+    rows: list[dict[str, str]],
+    decision: str,
+) -> list[int]:
+    def rank(group_index: int) -> tuple[float, str]:
+        candidates = [
+            row_index
+            for row_index in groups[group_index]
+            if rows[row_index]["decision"] == decision
+        ]
+        best = min(
+            candidates,
+            key=lambda row_index: (
+                -float(rows[row_index]["representative_score"]),
+                rows[row_index]["source_path"],
+                rows[row_index]["start_time"],
+            ),
+        )
+        return (-float(rows[best]["representative_score"]), rows[best]["source_path"])
+
+    return sorted(group_indices, key=rank)
+
+
+def best_group_row(
+    group: list[int], rows: list[dict[str, str]], decision: str
+) -> int:
+    candidates = [index for index in group if rows[index]["decision"] == decision]
     return min(
-        review_rows,
+        candidates,
         key=lambda index: (
             -float(rows[index]["representative_score"]),
             rows[index]["source_path"],
+            rows[index]["start_time"],
         ),
     )
 
 
-def apply_review_overflow(
-    rows: list[dict[str, str]], review_ceiling: float
-) -> dict[str, int | float | bool]:
-    if not 0 <= review_ceiling <= 1:
-        raise ValueError("review ceiling must be between 0 and 1")
+def exception_groups(
+    group_indices: list[int],
+    groups: list[list[int]],
+    rows: list[dict[str, str]],
+    decision: str,
+) -> set[int]:
+    """Keep only evidenced exceptions that are distinct within redundancy groups."""
 
-    groups = unique_candidate_groups(rows)
+    by_distinct_moment: dict[str, list[int]] = {}
+    for group_index in group_indices:
+        best = best_group_row(groups[group_index], rows, decision)
+        row = rows[best]
+        if not quality_exception(row):
+            continue
+        similarity = row.get("similarity_group", "").strip().casefold()
+        beat = row.get("story_beat", "").strip().casefold()
+        if not similarity:
+            key = f"candidate:{group_index}"
+        elif row.get("relationship_progression") == "true" and beat:
+            key = f"progression:{similarity}:{beat}"
+        else:
+            key = f"similarity:{similarity}"
+        by_distinct_moment.setdefault(key, []).append(group_index)
+
+    retained: set[int] = set()
+    for candidates in by_distinct_moment.values():
+        retained.add(ranked_group_indices(candidates, groups, rows, decision)[0])
+    return retained
+
+
+def change_decision(row: dict[str, str], decision: str, action: str) -> None:
+    row["decision"] = decision
+    row["overflow_action"] = action
+
+
+def apply_photo_guardrails(
+    rows: list[dict[str, str]], select_ceiling: float, review_ceiling: float
+) -> dict[str, int | float | bool]:
+    photo_rows = [row for row in rows if not is_video(row["source_path"])]
+    if not photo_rows:
+        return {
+            "unique_candidate_count": 0,
+            "select_ceiling": select_ceiling,
+            "review_ceiling": review_ceiling,
+            "initial_select_count": 0,
+            "initial_review_count": 0,
+            "initial_select_ratio": 0.0,
+            "initial_review_ratio": 0.0,
+            "triggered": False,
+            "final_select_count": 0,
+            "final_review_count": 0,
+            "final_select_ratio": 0.0,
+            "final_review_ratio": 0.0,
+            "retained_exception_count": 0,
+        }
+
+    groups = unique_candidate_groups(photo_rows)
+    unique_count = len(groups)
+    initial_select = [
+        index
+        for index, group in enumerate(groups)
+        if any(photo_rows[row_index]["decision"] == "select" for row_index in group)
+    ]
+    initial_review = [
+        index
+        for index, group in enumerate(groups)
+        if any(photo_rows[row_index]["decision"] == "review" for row_index in group)
+    ]
+    initial_select_ratio = len(initial_select) / unique_count
+    initial_review_ratio = len(initial_review) / unique_count
+    triggered = (
+        initial_select_ratio > select_ceiling
+        or initial_review_ratio > review_ceiling
+    )
+    if not triggered:
+        return {
+            "unique_candidate_count": unique_count,
+            "select_ceiling": select_ceiling,
+            "review_ceiling": review_ceiling,
+            "initial_select_count": len(initial_select),
+            "initial_review_count": len(initial_review),
+            "initial_select_ratio": initial_select_ratio,
+            "initial_review_ratio": initial_review_ratio,
+            "triggered": False,
+            "final_select_count": len(initial_select),
+            "final_review_count": len(initial_review),
+            "final_select_ratio": initial_select_ratio,
+            "final_review_ratio": initial_review_ratio,
+            "retained_exception_count": 0,
+        }
+
+    select_target = math.floor(unique_count * select_ceiling)
+    if unique_count and initial_select and select_target == 0:
+        select_target = 1
+    retained_select_exceptions = exception_groups(
+        initial_select, groups, photo_rows, "select"
+    )
+    retained_select = set(retained_select_exceptions)
+    for group_index in ranked_group_indices(
+        initial_select, groups, photo_rows, "select"
+    ):
+        if group_index in retained_select:
+            continue
+        if len(retained_select) >= select_target:
+            break
+        retained_select.add(group_index)
+
+    for group_index in initial_select:
+        select_rows = [
+            row_index
+            for row_index in groups[group_index]
+            if photo_rows[row_index]["decision"] == "select"
+        ]
+        if group_index in retained_select:
+            best = best_group_row(groups[group_index], photo_rows, "select")
+            photo_rows[best]["overflow_action"] = (
+                "retained-select-quality-exception"
+                if group_index in retained_select_exceptions
+                else "retained-select-representative"
+            )
+            for row_index in select_rows:
+                if row_index != best:
+                    change_decision(
+                        photo_rows[row_index],
+                        "not_selected",
+                        "removed-duplicate-select-representation",
+                    )
+        else:
+            for row_index in select_rows:
+                change_decision(
+                    photo_rows[row_index], "review", "moved-select-to-review"
+                )
+
     review_groups = [
         index
         for index, group in enumerate(groups)
-        if any(rows[row_index]["decision"] == "review" for row_index in group)
+        if not any(photo_rows[row_index]["decision"] == "select" for row_index in group)
+        and any(photo_rows[row_index]["decision"] == "review" for row_index in group)
     ]
-    unique_count = len(groups)
-    initial_review_count = len(review_groups)
-    initial_ratio = initial_review_count / unique_count
-    triggered = initial_ratio > review_ceiling
-    stats: dict[str, int | float | bool] = {
-        "unique_candidate_count": unique_count,
-        "initial_review_count": initial_review_count,
-        "initial_review_ratio": initial_ratio,
-        "review_ceiling": review_ceiling,
-        "triggered": triggered,
-        "final_review_count": initial_review_count,
-        "final_review_ratio": initial_ratio,
-    }
-    if not triggered:
-        return stats
-
-    target_count = math.floor(unique_count * review_ceiling)
-    similarity_buckets: dict[str, list[int]] = {}
-    for group_index in review_groups:
-        group = groups[group_index]
-        best_index = best_review_row(group, rows)
-        similarity_group = rows[best_index]["similarity_group"]
-        key = similarity_group or f"__candidate_{group_index}"
-        similarity_buckets.setdefault(key, []).append(group_index)
-
-    retained: set[int] = set()
-    for group_indices in similarity_buckets.values():
-        ranked = sorted(group_indices, key=lambda index: candidate_rank(groups[index], rows))
-        relationship_progression = any(
-            rows[row_index]["relationship_progression"] == "true"
-            for group_index in group_indices
-            for row_index in groups[group_index]
-        )
-        story_beats = {
-            rows[best_review_row(groups[group_index], rows)]["story_beat"].casefold()
-            for group_index in group_indices
-            if rows[best_review_row(groups[group_index], rows)]["story_beat"]
-        }
-        if relationship_progression and story_beats:
-            by_beat: dict[str, list[int]] = {}
-            for group_index in ranked:
-                row = rows[best_review_row(groups[group_index], rows)]
-                beat = row["story_beat"].casefold() or "__unspecified"
-                by_beat.setdefault(beat, []).append(group_index)
-            distinct = [indices[0] for indices in by_beat.values()]
-            retained.update(
-                sorted(
-                    distinct,
-                    key=lambda index: candidate_rank(groups[index], rows),
-                )[:5]
-            )
-        else:
-            retained.update(ranked[:2])
-
-    if len(retained) > target_count:
-        retained = set(
-            sorted(retained, key=lambda index: candidate_rank(groups[index], rows))[
-                :target_count
-            ]
-        )
+    review_target = math.floor(unique_count * review_ceiling)
+    retained_review_exceptions = exception_groups(
+        review_groups, groups, photo_rows, "review"
+    )
+    retained_review = set(retained_review_exceptions)
+    for group_index in ranked_group_indices(
+        review_groups, groups, photo_rows, "review"
+    ):
+        if group_index in retained_review:
+            continue
+        if len(retained_review) >= review_target:
+            break
+        retained_review.add(group_index)
 
     for group_index in review_groups:
-        group = groups[group_index]
-        retained_row = best_review_row(group, rows) if group_index in retained else None
-        for row_index in group:
-            row = rows[row_index]
-            if row["decision"] != "review":
+        best = (
+            best_group_row(groups[group_index], photo_rows, "review")
+            if group_index in retained_review
+            else None
+        )
+        for row_index in groups[group_index]:
+            if photo_rows[row_index]["decision"] != "review":
                 continue
-            if row_index == retained_row:
-                row["overflow_action"] = "retained-review-representative"
-                continue
-            original_reason = row["reason"]
-            row["decision"] = "not_selected"
-            row["reason"] = (
-                "usable but not shortlisted after backup overflow reduction; "
-                + original_reason
-            )
-            row["overflow_action"] = "moved-review-to-not-selected"
+            if row_index == best:
+                photo_rows[row_index]["overflow_action"] = (
+                    "retained-review-quality-exception"
+                    if group_index in retained_review_exceptions
+                    else "retained-review-representative"
+                )
+            else:
+                change_decision(
+                    photo_rows[row_index],
+                    "not_selected",
+                    "moved-review-to-not-selected",
+                )
 
-    final_review_count = sum(
-        any(rows[row_index]["decision"] == "review" for row_index in group)
+    final_select = sum(
+        any(photo_rows[row_index]["decision"] == "select" for row_index in group)
         for group in groups
     )
-    stats["final_review_count"] = final_review_count
-    stats["final_review_ratio"] = final_review_count / unique_count
-    return stats
+    final_review = sum(
+        any(photo_rows[row_index]["decision"] == "review" for row_index in group)
+        for group in groups
+    )
+    return {
+        "unique_candidate_count": unique_count,
+        "select_ceiling": select_ceiling,
+        "review_ceiling": review_ceiling,
+        "initial_select_count": len(initial_select),
+        "initial_review_count": len(initial_review),
+        "initial_select_ratio": initial_select_ratio,
+        "initial_review_ratio": initial_review_ratio,
+        "triggered": True,
+        "final_select_count": final_select,
+        "final_review_count": final_review,
+        "final_select_ratio": final_select / unique_count,
+        "final_review_ratio": final_review / unique_count,
+        "retained_exception_count": len(retained_select_exceptions)
+        + len(retained_review_exceptions),
+    }
+
+
+def merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged: list[list[float]] = []
+    for start, end in sorted(intervals):
+        if end <= start:
+            continue
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
+
+
+def subtract_intervals(
+    intervals: list[tuple[float, float]], blockers: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    result: list[tuple[float, float]] = []
+    blocker_union = merge_intervals(blockers)
+    for start, end in merge_intervals(intervals):
+        fragments = [(start, end)]
+        for block_start, block_end in blocker_union:
+            next_fragments: list[tuple[float, float]] = []
+            for left, right in fragments:
+                if block_end <= left or block_start >= right:
+                    next_fragments.append((left, right))
+                    continue
+                if block_start > left:
+                    next_fragments.append((left, block_start))
+                if block_end < right:
+                    next_fragments.append((block_end, right))
+            fragments = next_fragments
+        result.extend(fragments)
+    return merge_intervals(result)
+
+
+def video_row_interval(row: dict[str, str], duration: float) -> tuple[float, float]:
+    if not row["start_time"] and not row["end_time"]:
+        return (0.0, duration)
+    start = parse_timecode(row["start_time"])
+    end = parse_timecode(row["end_time"])
+    if end <= start or end > duration + 0.05:
+        raise ValueError(
+            f"invalid video interval for {row['source_path']}: "
+            f"{row['start_time']} - {row['end_time']}"
+        )
+    return (start, min(end, duration))
+
+
+def video_decision_durations(
+    rows: list[dict[str, str]], video_durations: dict[str, float]
+) -> dict[str, float]:
+    by_source: dict[str, dict[str, list[tuple[float, float]]]] = {}
+    for row in rows:
+        source = row["source_path"]
+        if not is_video(source) or row["decision"] not in {"select", "review"}:
+            continue
+        if source not in video_durations or video_durations[source] <= 0:
+            raise ValueError(f"missing readable duration for video source: {source}")
+        by_source.setdefault(source, {"select": [], "review": []})[
+            row["decision"]
+        ].append(video_row_interval(row, video_durations[source]))
+
+    result = {"select": 0.0, "review": 0.0}
+    for categories in by_source.values():
+        selected = merge_intervals(categories["select"])
+        review = subtract_intervals(categories["review"], selected)
+        result["select"] += sum(end - start for start, end in selected)
+        result["review"] += sum(end - start for start, end in review)
+    return result
+
+
+def apply_video_guardrails(
+    rows: list[dict[str, str]],
+    select_ceiling: float,
+    review_ceiling: float,
+    video_durations: dict[str, float],
+    short_video_seconds: float,
+) -> dict[str, int | float | bool]:
+    all_video_rows = [row for row in rows if is_video(row["source_path"])]
+    all_sources = sorted({row["source_path"] for row in all_video_rows})
+    for source in all_sources:
+        if source not in video_durations or video_durations[source] <= 0:
+            source_rows = [
+                row for row in all_video_rows if row["source_path"] == source
+            ]
+            if source_rows and all(row["decision"] == "excluded" for row in source_rows):
+                continue
+            raise ValueError(f"missing readable duration for video source: {source}")
+    video_rows = [
+        row for row in all_video_rows if row["source_path"] in video_durations
+    ]
+    sources = sorted({row["source_path"] for row in video_rows})
+    total_duration = sum(video_durations[source] for source in sources)
+    initial = video_decision_durations(video_rows, video_durations)
+    short_exception = bool(sources) and total_duration <= short_video_seconds
+    triggered = (
+        not short_exception
+        and total_duration > 0
+        and (
+            initial["select"] / total_duration > select_ceiling
+            or initial["review"] / total_duration > review_ceiling
+        )
+    )
+    base: dict[str, int | float | bool] = {
+        "total_duration": total_duration,
+        "select_ceiling": select_ceiling,
+        "review_ceiling": review_ceiling,
+        "initial_select_duration": initial["select"],
+        "initial_review_duration": initial["review"],
+        "initial_select_ratio": initial["select"] / total_duration if total_duration else 0.0,
+        "initial_review_ratio": initial["review"] / total_duration if total_duration else 0.0,
+        "triggered": triggered,
+        "short_collection_exception": short_exception,
+        "retained_exception_count": 0,
+    }
+    if not triggered:
+        base.update(
+            {
+                "final_select_duration": initial["select"],
+                "final_review_duration": initial["review"],
+                "final_select_ratio": initial["select"] / total_duration if total_duration else 0.0,
+                "final_review_ratio": initial["review"] / total_duration if total_duration else 0.0,
+            }
+        )
+        return base
+
+    groups = unique_candidate_groups(video_rows)
+
+    def duration_for(group_indices: set[int], decision: str) -> float:
+        candidates: list[dict[str, str]] = []
+        for group_index in group_indices:
+            best = best_group_row(groups[group_index], video_rows, decision)
+            candidates.append(video_rows[best])
+        return video_decision_durations(candidates, video_durations)[decision]
+
+    select_groups = [
+        index
+        for index, group in enumerate(groups)
+        if any(video_rows[row_index]["decision"] == "select" for row_index in group)
+    ]
+    protected_select = exception_groups(
+        select_groups, groups, video_rows, "select"
+    )
+    retained_select = set(protected_select)
+    select_target = total_duration * select_ceiling
+    for group_index in ranked_group_indices(
+        select_groups, groups, video_rows, "select"
+    ):
+        if group_index in retained_select:
+            continue
+        trial = retained_select | {group_index}
+        if duration_for(trial, "select") <= select_target + 1e-6:
+            retained_select.add(group_index)
+
+    for group_index in select_groups:
+        select_rows = [
+            row_index
+            for row_index in groups[group_index]
+            if video_rows[row_index]["decision"] == "select"
+        ]
+        if group_index in retained_select:
+            best = best_group_row(groups[group_index], video_rows, "select")
+            video_rows[best]["overflow_action"] = (
+                "retained-select-quality-exception"
+                if group_index in protected_select
+                else "retained-select-interval"
+            )
+            for row_index in select_rows:
+                if row_index != best:
+                    change_decision(
+                        video_rows[row_index],
+                        "not_selected",
+                        "removed-duplicate-select-interval",
+                    )
+        else:
+            for row_index in select_rows:
+                change_decision(
+                    video_rows[row_index], "review", "moved-select-to-review"
+                )
+
+    review_groups = [
+        index
+        for index, group in enumerate(groups)
+        if not any(video_rows[row_index]["decision"] == "select" for row_index in group)
+        and any(video_rows[row_index]["decision"] == "review" for row_index in group)
+    ]
+    protected_review = exception_groups(
+        review_groups, groups, video_rows, "review"
+    )
+    retained_review = set(protected_review)
+    review_target = total_duration * review_ceiling
+    for group_index in ranked_group_indices(
+        review_groups, groups, video_rows, "review"
+    ):
+        if group_index in retained_review:
+            continue
+        trial = retained_review | {group_index}
+        if duration_for(trial, "review") <= review_target + 1e-6:
+            retained_review.add(group_index)
+
+    for group_index in review_groups:
+        best = (
+            best_group_row(groups[group_index], video_rows, "review")
+            if group_index in retained_review
+            else None
+        )
+        for row_index in groups[group_index]:
+            if video_rows[row_index]["decision"] != "review":
+                continue
+            if row_index == best:
+                video_rows[row_index]["overflow_action"] = (
+                    "retained-review-quality-exception"
+                    if group_index in protected_review
+                    else "retained-review-interval"
+                )
+            else:
+                change_decision(
+                    video_rows[row_index],
+                    "not_selected",
+                    "moved-review-to-not-selected",
+                )
+
+    final = video_decision_durations(video_rows, video_durations)
+    base.update(
+        {
+            "final_select_duration": final["select"],
+            "final_review_duration": final["review"],
+            "final_select_ratio": final["select"] / total_duration,
+            "final_review_ratio": final["review"] / total_duration,
+            "retained_exception_count": len(protected_select)
+            + len(protected_review),
+        }
+    )
+    return base
+
+
+def apply_selection_guardrails(
+    rows: list[dict[str, str]],
+    *,
+    select_ceiling: float,
+    review_ceiling: float,
+    video_durations: dict[str, float],
+    short_video_seconds: float,
+) -> dict[str, dict[str, int | float | bool]]:
+    """Apply soft, quality-aware photo-count and video-duration guardrails."""
+
+    if not 0 <= select_ceiling <= 1:
+        raise ValueError("select ceiling must be between 0 and 1")
+    if not 0 <= review_ceiling <= 1:
+        raise ValueError("review ceiling must be between 0 and 1")
+    if short_video_seconds < 0:
+        raise ValueError("short video threshold must be non-negative")
+    return {
+        "photo": apply_photo_guardrails(rows, select_ceiling, review_ceiling),
+        "video": apply_video_guardrails(
+            rows,
+            select_ceiling,
+            review_ceiling,
+            video_durations,
+            short_video_seconds,
+        ),
+    }
 
 
 def unique_destination(folder: Path, filename: str) -> Path:
@@ -683,6 +1096,23 @@ def probe_duration(source: Path, ffprobe: str) -> float:
         detail = result.stderr.strip() or "invalid duration"
         raise OSError(f"failed to inspect {source.name}: {detail[-500:]}")
     return duration
+
+
+def probe_readable_video_durations(
+    rows: list[dict[str, str]], ffprobe: str
+) -> dict[str, float]:
+    durations: dict[str, float] = {}
+    for source in sorted(
+        {row["source_path"] for row in rows if is_video(row["source_path"])}
+    ):
+        try:
+            durations[source] = probe_duration(Path(source), ffprobe)
+        except OSError:
+            source_rows = [row for row in rows if row["source_path"] == source]
+            if source_rows and all(row["decision"] == "excluded" for row in source_rows):
+                continue
+            raise
+    return durations
 
 
 def validate_clip_rows(rows: list[dict[str, str]], ffprobe: str) -> None:
@@ -1311,9 +1741,11 @@ def write_report(
     mode: str,
     video_delivery: str,
     estimated_bytes: int,
-    overflow_stats: dict[str, int | float | bool],
+    guardrail_stats: dict[str, dict[str, int | float | bool]],
 ) -> None:
     counts = Counter(row["decision"] for row in rows)
+    photo_stats = guardrail_stats["photo"]
+    video_stats = guardrail_stats["video"]
     labels = {
         "select": "主选",
         "review": "备选_用户复筛",
@@ -1332,13 +1764,31 @@ def write_report(
         ),
         f"- 源文件总数：{len({row['source_path'] for row in rows})}",
         f"- 判断记录总数：{len(rows)}",
-        f"- 唯一候选数：{overflow_stats['unique_candidate_count']}",
-        f"- 初筛备选数：{overflow_stats['initial_review_count']}",
-        f"- 备选比例：{float(overflow_stats['initial_review_ratio']):.2%}",
-        f"- 备选上限：{float(overflow_stats['review_ceiling']):.2%}",
-        f"- 溢出精简：{'已触发' if overflow_stats['triggered'] else '未触发'}",
-        f"- 精简后备选数：{overflow_stats['final_review_count']}",
-        f"- 精简后备选比例：{float(overflow_stats['final_review_ratio']):.2%}",
+        f"- 唯一候选数（照片）：{photo_stats['unique_candidate_count']}",
+        f"- 照片初筛主选：{photo_stats['initial_select_count']} "
+        f"({float(photo_stats['initial_select_ratio']):.2%})",
+        f"- 初筛备选数（照片）：{photo_stats['initial_review_count']}",
+        f"- 备选比例（照片）：{float(photo_stats['initial_review_ratio']):.2%}",
+        f"- 主选软触发线：{float(photo_stats['select_ceiling']):.2%}",
+        f"- 备选软触发线：{float(photo_stats['review_ceiling']):.2%}",
+        f"- 溢出精简（照片）：{'已触发' if photo_stats['triggered'] else '未触发'}",
+        f"- 精简后照片主选：{photo_stats['final_select_count']} "
+        f"({float(photo_stats['final_select_ratio']):.2%})",
+        f"- 精简后备选数（照片）：{photo_stats['final_review_count']}",
+        f"- 精简后备选比例（照片）：{float(photo_stats['final_review_ratio']):.2%}",
+        f"- 照片质量例外保留：{photo_stats['retained_exception_count']}",
+        f"- 可读视频总时长：{float(video_stats['total_duration']):.3f} 秒",
+        f"- 视频初筛主选：{float(video_stats['initial_select_duration']):.3f} 秒 "
+        f"({float(video_stats['initial_select_ratio']):.2%})",
+        f"- 视频初筛备选：{float(video_stats['initial_review_duration']):.3f} 秒 "
+        f"({float(video_stats['initial_review_ratio']):.2%})",
+        f"- 溢出精简（视频）：{'已触发' if video_stats['triggered'] else '未触发'}",
+        f"- 短视频集合例外：{'是' if video_stats['short_collection_exception'] else '否'}",
+        f"- 精简后视频主选：{float(video_stats['final_select_duration']):.3f} 秒 "
+        f"({float(video_stats['final_select_ratio']):.2%})",
+        f"- 精简后视频备选：{float(video_stats['final_review_duration']):.3f} 秒 "
+        f"({float(video_stats['final_review_ratio']):.2%})",
+        f"- 视频质量例外保留：{video_stats['retained_exception_count']}",
         f"- 主选记录：{counts['select']}",
         f"- 备选_用户复筛记录：{counts['review']}",
         f"- 纪念留档记录：{counts['memory']}",
@@ -1383,8 +1833,29 @@ def main() -> int:
     args = parse_args()
     try:
         rows = load_manifest(args.manifest)
-        overflow_stats = apply_review_overflow(rows, args.review_ceiling)
         video_delivery = resolve_video_delivery(args.mode, args.video_delivery)
+        video_sources = sorted(
+            {
+                row["source_path"]
+                for row in rows
+                if is_video(row["source_path"])
+            }
+        )
+        ffprobe = (
+            resolve_executable(args.ffprobe, "ffprobe") if video_sources else None
+        )
+        video_durations = (
+            probe_readable_video_durations(rows, ffprobe)
+            if ffprobe is not None
+            else {}
+        )
+        guardrail_stats = apply_selection_guardrails(
+            rows,
+            select_ceiling=args.select_ceiling,
+            review_ceiling=args.review_ceiling,
+            video_durations=video_durations,
+            short_video_seconds=args.short_video_seconds,
+        )
         if args.output.exists():
             if not args.output.is_dir():
                 raise ValueError(f"output is not a directory: {args.output}")
@@ -1399,11 +1870,6 @@ def main() -> int:
         )
         ffmpeg = (
             resolve_executable(args.ffmpeg, "ffmpeg")
-            if clip_selection_rows_exist
-            else None
-        )
-        ffprobe = (
-            resolve_executable(args.ffprobe, "ffprobe")
             if clip_selection_rows_exist
             else None
         )
@@ -1442,7 +1908,7 @@ def main() -> int:
             args.mode,
             video_delivery,
             estimated_bytes,
-            overflow_stats,
+            guardrail_stats,
         )
         failed_count = sum(
             row["generation_status"] == "failed" for row in included_rows

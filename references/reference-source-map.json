@@ -1,25 +1,18 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "sources": [
     {
-      "id": "unsplash",
-      "name": "Unsplash",
-      "url": "https://unsplash.com/",
+      "id": "wikimedia-commons",
+      "name": "Wikimedia Commons",
+      "url": "https://commons.wikimedia.org/wiki/Main_Page",
+      "media_urls": {
+        "photo": "https://commons.wikimedia.org/wiki/Category:Images",
+        "video": "https://commons.wikimedia.org/wiki/Category:Videos"
+      },
       "access_mode": "automatic",
-      "media_kinds": ["photo"],
+      "media_kinds": ["photo", "video"],
       "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "portrait", "family", "friends", "vlog-event"]
-    },
-    {
-      "id": "pexels-photos",
-      "name": "Pexels Photos",
-      "url": "https://www.pexels.com/",
-      "access_mode": "automatic",
-      "media_kinds": ["photo"],
-      "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     },
     {
       "id": "flickr-public",
@@ -27,65 +20,72 @@
       "url": "https://www.flickr.com/explore",
       "access_mode": "automatic",
       "media_kinds": ["photo"],
-      "roles": ["author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+      "roles": ["editorial", "author-discovery"],
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     },
     {
-      "id": "wikimedia-commons-photos",
-      "name": "Wikimedia Commons Images",
-      "url": "https://commons.wikimedia.org/wiki/Main_Page",
+      "id": "google-images",
+      "name": "Google Images",
+      "url": "https://images.google.com/",
       "access_mode": "automatic",
       "media_kinds": ["photo"],
       "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "documentary-culture"]
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     },
     {
-      "id": "pexels-videos",
-      "name": "Pexels Videos",
-      "url": "https://www.pexels.com/videos/",
+      "id": "google-videos",
+      "name": "Google Videos",
+      "url": "https://www.google.com/videohp",
       "access_mode": "automatic",
       "media_kinds": ["video"],
       "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     },
     {
-      "id": "pixabay-videos",
-      "name": "Pixabay Videos",
-      "url": "https://pixabay.com/videos/",
-      "access_mode": "automatic",
-      "media_kinds": ["video"],
+      "id": "unsplash",
+      "name": "Unsplash",
+      "url": "https://unsplash.com/",
+      "access_mode": "manual-challenge",
+      "media_kinds": ["photo"],
       "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     },
     {
-      "id": "mixkit",
-      "name": "Mixkit",
-      "url": "https://mixkit.co/free-stock-video/",
-      "access_mode": "automatic",
-      "media_kinds": ["video"],
-      "roles": ["editorial"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "portrait", "family", "friends", "vlog-event"]
-    },
-    {
-      "id": "wikimedia-commons-videos",
-      "name": "Wikimedia Commons Videos",
-      "url": "https://commons.wikimedia.org/wiki/Category:Videos",
-      "access_mode": "automatic",
-      "media_kinds": ["video"],
+      "id": "pexels",
+      "name": "Pexels",
+      "url": "https://www.pexels.com/",
+      "media_urls": {
+        "photo": "https://www.pexels.com/",
+        "video": "https://www.pexels.com/videos/"
+      },
+      "access_mode": "manual-challenge",
+      "media_kinds": ["photo", "video"],
       "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "vlog-event"],
-      "default_for": ["landscape-travel", "architecture-space", "documentary-culture", "vlog-event"]
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+    },
+    {
+      "id": "xiaohongshu",
+      "name": "Xiaohongshu",
+      "url": "https://www.xiaohongshu.com/explore",
+      "access_mode": "manual-login",
+      "media_kinds": ["photo", "video"],
+      "roles": ["trend", "author-discovery"],
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
+    },
+    {
+      "id": "instagram",
+      "name": "Instagram",
+      "url": "https://www.instagram.com/",
+      "access_mode": "manual-login",
+      "media_kinds": ["photo", "video"],
+      "roles": ["trend", "author-discovery"],
+      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     },
     {
       "id": "youtube",
       "name": "YouTube",
       "url": "https://www.youtube.com/",
-      "access_mode": "manual-enhancement",
+      "access_mode": "manual-login",
       "media_kinds": ["video"],
       "roles": ["trend", "author-discovery"],
       "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
@@ -94,35 +94,8 @@
       "id": "bilibili",
       "name": "Bilibili",
       "url": "https://www.bilibili.com/",
-      "access_mode": "manual-enhancement",
+      "access_mode": "manual-login",
       "media_kinds": ["video"],
-      "roles": ["trend", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
-    },
-    {
-      "id": "vimeo",
-      "name": "Vimeo",
-      "url": "https://vimeo.com/",
-      "access_mode": "manual-enhancement",
-      "media_kinds": ["video"],
-      "roles": ["editorial", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
-    },
-    {
-      "id": "instagram",
-      "name": "Instagram",
-      "url": "https://www.instagram.com/",
-      "access_mode": "manual-enhancement",
-      "media_kinds": ["photo", "video"],
-      "roles": ["trend", "author-discovery"],
-      "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
-    },
-    {
-      "id": "xiaohongshu",
-      "name": "Xiaohongshu",
-      "url": "https://www.xiaohongshu.com/explore",
-      "access_mode": "manual-enhancement",
-      "media_kinds": ["photo", "video"],
       "roles": ["trend", "author-discovery"],
       "applicable_for": ["landscape-travel", "architecture-space", "documentary-culture", "portrait", "family", "friends", "vlog-event"]
     }
